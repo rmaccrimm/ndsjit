@@ -1,12 +1,10 @@
 #![allow(dead_code, unused_variables)]
 
+mod execbuffer;
+
+use execbuffer::ExecBuffer;
+
 use std::mem;
-use std::ptr;
-use windows::Win32::System::Memory::{
-    VirtualAlloc, VirtualFree, VirtualProtect, MEM_COMMIT, MEM_RELEASE, MEM_RESERVE,
-    PAGE_EXECUTE_READ, PAGE_PROTECTION_FLAGS, PAGE_READWRITE,
-};
-use windows::Win32::System::SystemInformation::{GetSystemInfo, SYSTEM_INFO};
 
 #[derive(PartialEq, Eq, Hash)]
 enum VReg {
@@ -49,35 +47,11 @@ fn main() {
     // ret
     code.push(0xc3);
 
-    println!("{}", vregs[0]);
+    let buf = ExecBuffer::from_vec(code).unwrap();
+    println!("before: {}", vregs[0]);
     unsafe {
-        let mut system_info = SYSTEM_INFO::default();
-        GetSystemInfo(&mut system_info as *mut SYSTEM_INFO);
-
-        let buf = VirtualAlloc(
-            ptr::null(),
-            system_info.dwPageSize as usize,
-            MEM_RESERVE | MEM_COMMIT,
-            PAGE_READWRITE,
-        );
-        ptr::copy_nonoverlapping(code.as_ptr(), buf as *mut u8, code.len());
-
-        let mut dummy = PAGE_PROTECTION_FLAGS::default();
-        VirtualProtect(
-            buf,
-            code.len(),
-            PAGE_EXECUTE_READ,
-            &mut dummy as *mut PAGE_PROTECTION_FLAGS,
-        );
-
-        let func: unsafe extern "C" fn(*mut u64) = mem::transmute(buf);
+        let func: unsafe extern "C" fn(*mut u64) = mem::transmute(buf.ptr);
         func(vregs.as_mut_ptr());
-
-        VirtualFree(buf, code.len(), MEM_RELEASE);
     }
-    println!("{}", vregs[0]);
-    // unsafe {
-    // func();
-    // func(vregs.as_mut_ptr());
-    // }
+    println!("after: {}", vregs[0]);
 }
