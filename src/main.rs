@@ -1,10 +1,8 @@
 #![allow(dead_code, unused_variables)]
 
 mod asm;
-mod execbuffer;
 
 use asm::AssemblerX64;
-use execbuffer::ExecBuffer;
 
 pub struct VirtualState {
     pub vregs: [u64; 30],
@@ -23,9 +21,10 @@ impl Default for VirtualState {
 
 fn main() {
     let mut asm = AssemblerX64::default();
-    asm.gen_prologue().add_rax_imm32(1932).gen_epilogue();
 
-    let buf = ExecBuffer::from_vec(asm.code).unwrap();
+    asm.gen_prologue().gen_epilogue();
+
+    let buf = asm.get_exec_buffer();
     let func = buf.as_func_ptr();
 
     let mut state = VirtualState::default();
