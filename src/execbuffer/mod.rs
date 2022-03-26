@@ -1,6 +1,5 @@
-use std::io::Error;
 use std::os::raw::c_void;
-use std::ptr;
+use std::{io::Error, mem, ptr};
 
 use windows::Win32::System::Memory::{
     VirtualAlloc, VirtualFree, VirtualProtect, MEM_COMMIT, MEM_RELEASE, MEM_RESERVE,
@@ -48,6 +47,12 @@ impl ExecBuffer {
                 })
             }
         }
+    }
+
+    pub fn as_func_ptr(&self) -> unsafe extern "C" fn(*mut u64) {
+        // Future note - windows VirtualAlloc docs mention calling FlushInstructionCache before calling modified
+        // instructions in memory. Not sure if that applies here or note
+        unsafe { mem::transmute(self.ptr) }
     }
 }
 
