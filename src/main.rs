@@ -1,26 +1,13 @@
 #![allow(dead_code, unused_variables)]
 
 mod asm;
+mod cpu;
+mod ir;
 
-use asm::AssemblerX64;
-
-pub struct VirtualState {
-    pub vregs: [u64; 30],
-    pub mem: Box<[u8]>,
-}
-
-impl Default for VirtualState {
-    fn default() -> VirtualState {
-        let mem_size = 4 * (1 << 20);
-        VirtualState {
-            vregs: [0; 30],
-            mem: vec![0; mem_size].into_boxed_slice(),
-        }
-    }
-}
+use asm::{AssemblerX64, VirtualState};
 
 fn main() {
-    let mut asm = AssemblerX64::default();
+    let mut asm = AssemblerX64::new();
 
     asm.gen_prologue().gen_epilogue();
 
