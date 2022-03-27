@@ -74,3 +74,57 @@ pub fn mov_ptr64_reg64(code: &mut Vec<u8>, dest: RegX64, src: RegX64) {
 pub fn ret(code: &mut Vec<u8>) {
     code.push(0xc3)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mov_reg64_ptr64_1() {
+        let mut code: Vec<u8> = Vec::new();
+        mov_reg64_ptr64(&mut code, RegX64::R8, RegX64::RBP);
+        assert_eq!(code, vec![0x4C, 0x8B, 0x45, 0x00]); // mov r8 [rbp]
+    }
+    #[test]
+    fn test_mov_reg64_ptr64_3() {
+        let mut code: Vec<u8> = Vec::new();
+        mov_reg64_ptr64(&mut code, RegX64::R15, RegX64::RSI);
+        assert_eq!(code, vec![0x4C, 0x8B, 0x3E]); // mov r15, [rsi]
+    }
+    #[test]
+    fn test_mov_reg64_ptr64_4() {
+        let mut code: Vec<u8> = Vec::new();
+        mov_reg64_ptr64(&mut code, RegX64::RDI, RegX64::RBX);
+        assert_eq!(code, vec![0x48, 0x8B, 0x3B]); // mov rdi,[rbx]
+    }
+    #[test]
+    fn test_mov_reg64_ptr64_5() {
+        let mut code: Vec<u8> = Vec::new();
+        mov_reg64_ptr64(&mut code, RegX64::RAX, RegX64::RAX);
+        assert_eq!(code, vec![0x48, 0x8B, 0x00]); // mov rax,[rax]
+    }
+    #[test]
+    fn test_mov_reg64_ptr64_6() {
+        let mut code: Vec<u8> = Vec::new();
+        mov_reg64_ptr64(&mut code, RegX64::R11, RegX64::RCX);
+        assert_eq!(code, vec![0x4C, 0x8B, 0x19]); // mov r11,[rcx]
+    }
+    #[test]
+    fn test_mov_reg64_ptr64_7() {
+        let mut code: Vec<u8> = Vec::new();
+        mov_reg64_ptr64(&mut code, RegX64::RBP, RegX64::RSP);
+        assert_eq!(code, vec![0x48, 0x8B, 0x2C, 0x24]); //mov rbp,[rsp]
+    }
+    #[test]
+    fn test_mov_reg64_ptr64_8() {
+        let mut code: Vec<u8> = Vec::new();
+        mov_reg64_ptr64(&mut code, RegX64::RCX, RegX64::RDI);
+        assert_eq!(code, vec![0x48, 0x8B, 0x0F]); // mov rcx,[rdi]
+    }
+    #[test]
+    fn test_mov_reg64_ptr64_9() {
+        let mut code: Vec<u8> = Vec::new();
+        mov_reg64_ptr64(&mut code, RegX64::R9, RegX64::R12);
+        assert_eq!(code, vec![0x4D, 0x8B, 0x0C, 0x24]) // mov r9,[r12]
+    }
+}
