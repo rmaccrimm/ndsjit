@@ -49,14 +49,18 @@ impl ExecBuffer {
         }
     }
 
-    pub fn call(&self, data: *mut u64) {
+    pub fn call(&self, vregs: *mut u8, mem: *mut u8) {
         // Future note - windows VirtualAlloc docs mention calling FlushInstructionCache before
         // calling modified instructions in memory. Not sure if that applies here or note
+        // Assuming neither of these are null, calling the generated code should be "safe"
         assert!(self.ptr != ptr::null_mut());
-        assert!(data != ptr::null_mut());
+        assert!(vregs != ptr::null_mut());
+        assert!(mem != ptr::null_mut());
         // Needs to be a C function so we can use the C calling convention(s)
-        let func: unsafe extern "C" fn(*mut u64) = unsafe { mem::transmute(self.ptr) };
-        func(data);
+        unsafe {
+            let func: unsafe extern "C" fn(*mut u8, *mut u8) = mem::transmute(self.ptr);
+            func(vregs, mem);
+        }
     }
 }
 

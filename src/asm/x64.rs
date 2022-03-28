@@ -1,6 +1,6 @@
 use std::vec::Vec;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum RegX64 {
     RAX = 0,
     RCX = 1,
@@ -80,6 +80,7 @@ mod tests {
     use super::*;
 
     #[test]
+    // FAILS - possible alternate encoding, need to test functionality
     fn test_mov_reg64_ptr64_1() {
         let mut code: Vec<u8> = Vec::new();
         mov_reg64_ptr64(&mut code, RegX64::R8, RegX64::RBP);
@@ -110,6 +111,7 @@ mod tests {
         assert_eq!(code, vec![0x4C, 0x8B, 0x19]); // mov r11,[rcx]
     }
     #[test]
+    // FAILS - possible alternate encoding, need to test functionality
     fn test_mov_reg64_ptr64_7() {
         let mut code: Vec<u8> = Vec::new();
         mov_reg64_ptr64(&mut code, RegX64::RBP, RegX64::RSP);
@@ -122,6 +124,7 @@ mod tests {
         assert_eq!(code, vec![0x48, 0x8B, 0x0F]); // mov rcx,[rdi]
     }
     #[test]
+    // FAILS - possible alternate encoding, need to test functionality
     fn test_mov_reg64_ptr64_9() {
         let mut code: Vec<u8> = Vec::new();
         mov_reg64_ptr64(&mut code, RegX64::R9, RegX64::R12);

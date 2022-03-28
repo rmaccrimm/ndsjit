@@ -1,4 +1,4 @@
-#[derive(Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum VReg {
     R0 = 0,
     R1 = 1,
@@ -7,8 +7,32 @@ pub enum VReg {
     R4 = 4,
     R5 = 5,
     R6 = 6,
+    R7 = 7,
+    R8 = 8,
+    R9 = 9,
+    R10 = 10,
+    R11 = 11,
+    R12 = 12,
+    R13 = 13,
+    R14 = 14,
+    R15 = 15,
+    R16 = 16,
+    R17 = 17,
+    R18 = 18,
+    R19 = 19,
+    R20 = 20,
+    R21 = 21,
+    R22 = 22,
+    R23 = 23,
+    R24 = 24,
+    R25 = 25,
+    R26 = 26,
+    R27 = 27,
+    R28 = 28,
+    R29 = 29,
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Operand {
     Reg(VReg),
     // Will probably include scale and offsets later
@@ -17,6 +41,16 @@ pub enum Operand {
     // Imm(u32),
 }
 
-pub enum IR {
-    MOV(Operand, Operand),
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum Opcode {
+    ADD,
+    MOV,
+    PUSH,
+    POP,
+    RET,
+}
+
+pub struct Instr {
+    pub opcode: Opcode,
+    pub operands: [Option<Operand>; 3],
 }

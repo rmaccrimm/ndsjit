@@ -1,29 +1,31 @@
+mod alloc;
 mod execbuffer;
 mod x64;
 
-use super::ir::{Operand, VReg, IR};
+use super::ir::{Instr, Operand, VReg};
+use alloc::RegAllocation;
 use execbuffer::ExecBuffer;
 use x64::*;
 
-use std::collections::HashMap;
-
 pub struct AssemblerX64 {
     code: Vec<u8>,
-    reg_alloc: HashMap<VReg, RegX64>,
+    reg_alloc: RegAllocation,
 }
 
-/* Planned use - these methods won't be called directly to setup machine code, but instead the
+/*
+Planned use - these methods won't be called directly to setup machine code, but instead the
 emit/translate/assemble (tbd) function will be passed IR instructions to encode, and then the
 get_exec_buffer will be called, something like:
+
     let func = AssemblerX64::new(reg_alloc)
         .emit(&instructions)
         .get_exec_buffer();
 */
 impl AssemblerX64 {
-    pub fn new() -> AssemblerX64 {
+    pub fn new(reg_alloc: RegAllocation) -> AssemblerX64 {
         AssemblerX64 {
             code: Vec::new(),
-            reg_alloc: HashMap::new(),
+            reg_alloc,
         }
     }
 
@@ -46,33 +48,11 @@ impl AssemblerX64 {
         self
     }
 
-    pub fn emit(&mut self, instr: IR) -> &mut Self {
-        match instr {
-            IR::MOV(op1, op2) => self.mov(op1, op2),
-        }
+    pub fn emit(&mut self, instr: Instr) -> &mut Self {
+        self
     }
 
     fn mov(&mut self, dest: Operand, src: Operand) -> &mut Self {
-        match (dest, src) {
-            (Operand::Ptr(_), Operand::Ptr(_)) => {
-                panic!("Invalid mov call. Cannot move between two memory addresses")
-            }
-            (Operand::Reg(d), Operand::Reg(s)) => mov_reg64_reg64(
-                &mut self.code,
-                *self.reg_alloc.get(&d).unwrap(),
-                *self.reg_alloc.get(&s).unwrap(),
-            ),
-            (Operand::Reg(d), Operand::Ptr(s)) => mov_reg64_ptr64(
-                &mut self.code,
-                *self.reg_alloc.get(&d).unwrap(),
-                *self.reg_alloc.get(&s).unwrap(),
-            ),
-            (Operand::Ptr(d), Operand::Reg(s)) => mov_ptr64_reg64(
-                &mut self.code,
-                *self.reg_alloc.get(&d).unwrap(),
-                *self.reg_alloc.get(&s).unwrap(),
-            ),
-        };
         self
     }
 
