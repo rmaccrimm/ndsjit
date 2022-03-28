@@ -93,6 +93,15 @@ pub fn mov_ptr64_reg64(code: &mut Vec<u8>, dest: RegX64, src: RegX64) {
     }
 }
 
+pub fn push_reg64(code: &mut Vec<u8>, reg: RegX64) {
+    let opcode = 0x50 | (reg as u8 & 0x7);
+    if (reg as u8) >= 8 {
+        // For extended 64-bit registers (R8-15), reg msb is stored in the REX prefix
+        code.push(0x41);
+    }
+    code.push(opcode)
+}
+
 pub fn ret(code: &mut Vec<u8>) {
     code.push(0xc3)
 }
@@ -192,5 +201,38 @@ mod tests {
         let mut code: Vec<u8> = Vec::new();
         mov_reg64_reg64(&mut code, RegX64::RCX, RegX64::R12);
         assert_eq!(code, vec![0x4C, 0x89, 0xE1]) // mov rcx,r12
+    }
+
+    #[test]
+    fn test_push_reg64_base() {
+        let mut code: Vec<u8> = Vec::new();
+        push_reg64(&mut code, RegX64::RAX);
+        push_reg64(&mut code, RegX64::RCX);
+        push_reg64(&mut code, RegX64::RDX);
+        push_reg64(&mut code, RegX64::RBX);
+        push_reg64(&mut code, RegX64::RSP);
+        push_reg64(&mut code, RegX64::RBP);
+        push_reg64(&mut code, RegX64::RSI);
+        push_reg64(&mut code, RegX64::RDI);
+        assert_eq!(code, vec![0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57]);
+    }
+    #[test]
+    fn test_push_reg64_extended() {
+        let mut code: Vec<u8> = Vec::new();
+        push_reg64(&mut code, RegX64::R8);
+        push_reg64(&mut code, RegX64::R9);
+        push_reg64(&mut code, RegX64::R10);
+        push_reg64(&mut code, RegX64::R11);
+        push_reg64(&mut code, RegX64::R12);
+        push_reg64(&mut code, RegX64::R13);
+        push_reg64(&mut code, RegX64::R14);
+        push_reg64(&mut code, RegX64::R15);
+        assert_eq!(
+            code,
+            vec![
+                0x41, 0x50, 0x41, 0x51, 0x41, 0x52, 0x41, 0x53, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56,
+                0x41, 0x57,
+            ]
+        );
     }
 }
