@@ -58,10 +58,19 @@ pub fn mov_reg64_reg64(code: &mut Vec<u8>, dest: RegX64, src: RegX64) {
 }
 
 pub fn mov_reg64_ptr64(code: &mut Vec<u8>, dest: RegX64, src: RegX64) {
-    write_bytes(
-        code,
-        &[rex_prefix(dest, src), 0x8b, mod_rm_byte(0, dest, src)],
-    )
+    // RBP is a special case, and can't be used as address without offset, since mod=b0, rm=b101 is
+    // reserved for disp32-only mode (rip relative)
+    let mod_ = if src == RegX64::RBP { 1 } else { 0 };
+    let mod_rm = mod_rm_byte(mod_, dest, src);
+    write_bytes(code, &[rex_prefix(dest, src), 0x8b, mod_rm]);
+    match src {
+        // Set a disp8 of 0
+        RegX64::RBP => code.push(0),
+        // An SIB byte follows all any mov with r/m field = b100. Index = b100 indicates no index,
+        // base is the same as modr/m (b100) -> 00100100
+        RegX64::RSP | RegX64::R12 => code.push(0x24),
+        _ => (),
+    }
 }
 
 pub fn mov_ptr64_reg64(code: &mut Vec<u8>, dest: RegX64, src: RegX64) {
