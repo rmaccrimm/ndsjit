@@ -102,6 +102,12 @@ pub fn push_reg64(code: &mut Vec<u8>, reg: RegX64) {
     code.push(opcode)
 }
 
+pub fn push_ptr64(code: &mut Vec<u8>, reg: RegX64) {}
+
+pub fn pop_reg64(code: &mut Vec<u8>, reg: RegX64) {}
+
+pub fn pop_ptr64(code: &mut Vec<u8>, reg: RegX64) {}
+
 pub fn ret(code: &mut Vec<u8>) {
     code.push(0xc3)
 }
@@ -110,129 +116,137 @@ pub fn ret(code: &mut Vec<u8>) {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_mov_reg64_ptr64_1() {
-        let mut code: Vec<u8> = Vec::new();
-        mov_reg64_ptr64(&mut code, RegX64::R8, RegX64::RBP);
-        assert_eq!(code, vec![0x4C, 0x8B, 0x45, 0x00]); // mov r8 [rbp]
-    }
-    #[test]
-    fn test_mov_reg64_ptr64_3() {
-        let mut code: Vec<u8> = Vec::new();
-        mov_reg64_ptr64(&mut code, RegX64::R15, RegX64::RSI);
-        assert_eq!(code, vec![0x4C, 0x8B, 0x3E]); // mov r15, [rsi]
-    }
-    #[test]
-    fn test_mov_reg64_ptr64_4() {
-        let mut code: Vec<u8> = Vec::new();
-        mov_reg64_ptr64(&mut code, RegX64::RDI, RegX64::RBX);
-        assert_eq!(code, vec![0x48, 0x8B, 0x3B]); // mov rdi,[rbx]
-    }
-    #[test]
-    fn test_mov_reg64_ptr64_5() {
-        let mut code: Vec<u8> = Vec::new();
-        mov_reg64_ptr64(&mut code, RegX64::RAX, RegX64::RAX);
-        assert_eq!(code, vec![0x48, 0x8B, 0x00]); // mov rax,[rax]
-    }
-    #[test]
-    fn test_mov_reg64_ptr64_6() {
-        let mut code: Vec<u8> = Vec::new();
-        mov_reg64_ptr64(&mut code, RegX64::R11, RegX64::RCX);
-        assert_eq!(code, vec![0x4C, 0x8B, 0x19]); // mov r11,[rcx]
-    }
-    #[test]
-    fn test_mov_reg64_ptr64_7() {
-        let mut code: Vec<u8> = Vec::new();
-        mov_reg64_ptr64(&mut code, RegX64::RBP, RegX64::RSP);
-        assert_eq!(code, vec![0x48, 0x8B, 0x2C, 0x24]); //mov rbp,[rsp]
-    }
-    #[test]
-    fn test_mov_reg64_ptr64_8() {
-        let mut code: Vec<u8> = Vec::new();
-        mov_reg64_ptr64(&mut code, RegX64::RCX, RegX64::RDI);
-        assert_eq!(code, vec![0x48, 0x8B, 0x0F]); // mov rcx,[rdi]
-    }
-    #[test]
-    fn test_mov_reg64_ptr64_9() {
-        let mut code: Vec<u8> = Vec::new();
-        mov_reg64_ptr64(&mut code, RegX64::R9, RegX64::R12);
-        assert_eq!(code, vec![0x4D, 0x8B, 0x0C, 0x24]) // mov r9,[r12]
+    #[cfg(test)]
+    mod mov {
+        use super::*;
+
+        #[test]
+        fn test_mov_reg64_ptr64_1() {
+            let mut code: Vec<u8> = Vec::new();
+            mov_reg64_ptr64(&mut code, RegX64::R8, RegX64::RBP);
+            assert_eq!(code, vec![0x4C, 0x8B, 0x45, 0x00]); // mov r8 [rbp]
+        }
+        #[test]
+        fn test_mov_reg64_ptr64_3() {
+            let mut code: Vec<u8> = Vec::new();
+            mov_reg64_ptr64(&mut code, RegX64::R15, RegX64::RSI);
+            assert_eq!(code, vec![0x4C, 0x8B, 0x3E]); // mov r15, [rsi]
+        }
+        #[test]
+        fn test_mov_reg64_ptr64_4() {
+            let mut code: Vec<u8> = Vec::new();
+            mov_reg64_ptr64(&mut code, RegX64::RDI, RegX64::RBX);
+            assert_eq!(code, vec![0x48, 0x8B, 0x3B]); // mov rdi,[rbx]
+        }
+        #[test]
+        fn test_mov_reg64_ptr64_5() {
+            let mut code: Vec<u8> = Vec::new();
+            mov_reg64_ptr64(&mut code, RegX64::RAX, RegX64::RAX);
+            assert_eq!(code, vec![0x48, 0x8B, 0x00]); // mov rax,[rax]
+        }
+        #[test]
+        fn test_mov_reg64_ptr64_6() {
+            let mut code: Vec<u8> = Vec::new();
+            mov_reg64_ptr64(&mut code, RegX64::R11, RegX64::RCX);
+            assert_eq!(code, vec![0x4C, 0x8B, 0x19]); // mov r11,[rcx]
+        }
+        #[test]
+        fn test_mov_reg64_ptr64_7() {
+            let mut code: Vec<u8> = Vec::new();
+            mov_reg64_ptr64(&mut code, RegX64::RBP, RegX64::RSP);
+            assert_eq!(code, vec![0x48, 0x8B, 0x2C, 0x24]); //mov rbp,[rsp]
+        }
+        #[test]
+        fn test_mov_reg64_ptr64_8() {
+            let mut code: Vec<u8> = Vec::new();
+            mov_reg64_ptr64(&mut code, RegX64::RCX, RegX64::RDI);
+            assert_eq!(code, vec![0x48, 0x8B, 0x0F]); // mov rcx,[rdi]
+        }
+        #[test]
+        fn test_mov_reg64_ptr64_9() {
+            let mut code: Vec<u8> = Vec::new();
+            mov_reg64_ptr64(&mut code, RegX64::R9, RegX64::R12);
+            assert_eq!(code, vec![0x4D, 0x8B, 0x0C, 0x24]) // mov r9,[r12]
+        }
+        #[test]
+        fn test_mov_ptr64_reg64_1() {
+            let mut code: Vec<u8> = Vec::new();
+            mov_ptr64_reg64(&mut code, RegX64::RBP, RegX64::RDI);
+            assert_eq!(code, vec![0x48, 0x89, 0x7D, 0x00]) // mov [rbp],rdi
+        }
+        #[test]
+        fn test_mov_ptr64_reg64_2() {
+            let mut code: Vec<u8> = Vec::new();
+            mov_ptr64_reg64(&mut code, RegX64::RSP, RegX64::RAX);
+            assert_eq!(code, vec![0x48, 0x89, 0x04, 0x24]) // mov [rsp],rax
+        }
+        #[test]
+        fn test_mov_ptr64_reg64_3() {
+            let mut code: Vec<u8> = Vec::new();
+            mov_ptr64_reg64(&mut code, RegX64::R12, RegX64::R15);
+            assert_eq!(code, vec![0x4D, 0x89, 0x3C, 0x24]) // mov [r12],r15
+        }
+
+        #[test]
+        fn test_mov_reg64_reg64_1() {
+            let mut code: Vec<u8> = Vec::new();
+            mov_reg64_reg64(&mut code, RegX64::RBX, RegX64::RDX);
+            assert_eq!(code, vec![0x48, 0x89, 0xD3]) // mov rbx,rdx
+        }
+        #[test]
+        fn test_mov_reg64_reg64_2() {
+            let mut code: Vec<u8> = Vec::new();
+            mov_reg64_reg64(&mut code, RegX64::RDX, RegX64::RBP);
+            assert_eq!(code, vec![0x48, 0x89, 0xEA]) // mov rdx,rbp
+        }
+        #[test]
+        fn test_mov_reg64_reg64_3() {
+            let mut code: Vec<u8> = Vec::new();
+            mov_reg64_reg64(&mut code, RegX64::R9, RegX64::RSP);
+            assert_eq!(code, vec![0x49, 0x89, 0xE1]) // mov r9,rsp
+        }
+        #[test]
+        fn test_mov_reg64_reg64_4() {
+            let mut code: Vec<u8> = Vec::new();
+            mov_reg64_reg64(&mut code, RegX64::RCX, RegX64::R12);
+            assert_eq!(code, vec![0x4C, 0x89, 0xE1]) // mov rcx,r12
+        }
     }
 
-    #[test]
-    fn test_mov_ptr64_reg64_1() {
-        let mut code: Vec<u8> = Vec::new();
-        mov_ptr64_reg64(&mut code, RegX64::RBP, RegX64::RDI);
-        assert_eq!(code, vec![0x48, 0x89, 0x7D, 0x00]) // mov [rbp],rdi
-    }
-    #[test]
-    fn test_mov_ptr64_reg64_2() {
-        let mut code: Vec<u8> = Vec::new();
-        mov_ptr64_reg64(&mut code, RegX64::RSP, RegX64::RAX);
-        assert_eq!(code, vec![0x48, 0x89, 0x04, 0x24]) // mov [rsp],rax
-    }
-    #[test]
-    fn test_mov_ptr64_reg64_3() {
-        let mut code: Vec<u8> = Vec::new();
-        mov_ptr64_reg64(&mut code, RegX64::R12, RegX64::R15);
-        assert_eq!(code, vec![0x4D, 0x89, 0x3C, 0x24]) // mov [r12],r15
-    }
-
-    #[test]
-    fn test_mov_reg64_reg64_1() {
-        let mut code: Vec<u8> = Vec::new();
-        mov_reg64_reg64(&mut code, RegX64::RBX, RegX64::RDX);
-        assert_eq!(code, vec![0x48, 0x89, 0xD3]) // mov rbx,rdx
-    }
-    #[test]
-    fn test_mov_reg64_reg64_2() {
-        let mut code: Vec<u8> = Vec::new();
-        mov_reg64_reg64(&mut code, RegX64::RDX, RegX64::RBP);
-        assert_eq!(code, vec![0x48, 0x89, 0xEA]) // mov rdx,rbp
-    }
-    #[test]
-    fn test_mov_reg64_reg64_3() {
-        let mut code: Vec<u8> = Vec::new();
-        mov_reg64_reg64(&mut code, RegX64::R9, RegX64::RSP);
-        assert_eq!(code, vec![0x49, 0x89, 0xE1]) // mov r9,rsp
-    }
-    #[test]
-    fn test_mov_reg64_reg64_4() {
-        let mut code: Vec<u8> = Vec::new();
-        mov_reg64_reg64(&mut code, RegX64::RCX, RegX64::R12);
-        assert_eq!(code, vec![0x4C, 0x89, 0xE1]) // mov rcx,r12
-    }
-
-    #[test]
-    fn test_push_reg64_base() {
-        let mut code: Vec<u8> = Vec::new();
-        push_reg64(&mut code, RegX64::RAX);
-        push_reg64(&mut code, RegX64::RCX);
-        push_reg64(&mut code, RegX64::RDX);
-        push_reg64(&mut code, RegX64::RBX);
-        push_reg64(&mut code, RegX64::RSP);
-        push_reg64(&mut code, RegX64::RBP);
-        push_reg64(&mut code, RegX64::RSI);
-        push_reg64(&mut code, RegX64::RDI);
-        assert_eq!(code, vec![0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57]);
-    }
-    #[test]
-    fn test_push_reg64_extended() {
-        let mut code: Vec<u8> = Vec::new();
-        push_reg64(&mut code, RegX64::R8);
-        push_reg64(&mut code, RegX64::R9);
-        push_reg64(&mut code, RegX64::R10);
-        push_reg64(&mut code, RegX64::R11);
-        push_reg64(&mut code, RegX64::R12);
-        push_reg64(&mut code, RegX64::R13);
-        push_reg64(&mut code, RegX64::R14);
-        push_reg64(&mut code, RegX64::R15);
-        assert_eq!(
-            code,
-            vec![
-                0x41, 0x50, 0x41, 0x51, 0x41, 0x52, 0x41, 0x53, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56,
-                0x41, 0x57,
-            ]
-        );
+    #[cfg(test)]
+    mod push {
+        use super::*;
+        #[test]
+        fn test_push_reg64_base() {
+            let mut code: Vec<u8> = Vec::new();
+            push_reg64(&mut code, RegX64::RAX);
+            push_reg64(&mut code, RegX64::RCX);
+            push_reg64(&mut code, RegX64::RDX);
+            push_reg64(&mut code, RegX64::RBX);
+            push_reg64(&mut code, RegX64::RSP);
+            push_reg64(&mut code, RegX64::RBP);
+            push_reg64(&mut code, RegX64::RSI);
+            push_reg64(&mut code, RegX64::RDI);
+            assert_eq!(code, vec![0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57]);
+        }
+        #[test]
+        fn test_push_reg64_extended() {
+            let mut code: Vec<u8> = Vec::new();
+            push_reg64(&mut code, RegX64::R8);
+            push_reg64(&mut code, RegX64::R9);
+            push_reg64(&mut code, RegX64::R10);
+            push_reg64(&mut code, RegX64::R11);
+            push_reg64(&mut code, RegX64::R12);
+            push_reg64(&mut code, RegX64::R13);
+            push_reg64(&mut code, RegX64::R14);
+            push_reg64(&mut code, RegX64::R15);
+            assert_eq!(
+                code,
+                vec![
+                    0x41, 0x50, 0x41, 0x51, 0x41, 0x52, 0x41, 0x53, 0x41, 0x54, 0x41, 0x55, 0x41,
+                    0x56, 0x41, 0x57,
+                ]
+            );
+        }
     }
 }
