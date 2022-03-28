@@ -53,7 +53,7 @@ pub fn add_rax_imm32(code: &mut Vec<u8>, imm: u32) {
 pub fn mov_reg64_reg64(code: &mut Vec<u8>, dest: RegX64, src: RegX64) {
     write_bytes(
         code,
-        &[rex_prefix(src, dest), 0x8b, mod_rm_byte(3, src, dest)],
+        &[rex_prefix(src, dest), 0x89, mod_rm_byte(3, src, dest)],
     )
 }
 
@@ -156,18 +156,41 @@ mod tests {
         mov_ptr64_reg64(&mut code, RegX64::RBP, RegX64::RDI);
         assert_eq!(code, vec![0x48, 0x89, 0x7D, 0x00]) // mov [rbp],rdi
     }
-
     #[test]
     fn test_mov_ptr64_reg64_2() {
         let mut code: Vec<u8> = Vec::new();
         mov_ptr64_reg64(&mut code, RegX64::RSP, RegX64::RAX);
         assert_eq!(code, vec![0x48, 0x89, 0x04, 0x24]) // mov [rsp],rax
     }
-
     #[test]
     fn test_mov_ptr64_reg64_3() {
         let mut code: Vec<u8> = Vec::new();
         mov_ptr64_reg64(&mut code, RegX64::R12, RegX64::R15);
         assert_eq!(code, vec![0x4D, 0x89, 0x3C, 0x24]) // mov [r12],r15
+    }
+
+    #[test]
+    fn test_mov_reg64_reg64_1() {
+        let mut code: Vec<u8> = Vec::new();
+        mov_reg64_reg64(&mut code, RegX64::RBX, RegX64::RDX);
+        assert_eq!(code, vec![0x48, 0x89, 0xD3]) // mov rbx,rdx
+    }
+    #[test]
+    fn test_mov_reg64_reg64_2() {
+        let mut code: Vec<u8> = Vec::new();
+        mov_reg64_reg64(&mut code, RegX64::RDX, RegX64::RBP);
+        assert_eq!(code, vec![0x48, 0x89, 0xEA]) // mov rdx,rbp
+    }
+    #[test]
+    fn test_mov_reg64_reg64_3() {
+        let mut code: Vec<u8> = Vec::new();
+        mov_reg64_reg64(&mut code, RegX64::R9, RegX64::RSP);
+        assert_eq!(code, vec![0x49, 0x89, 0xE1]) // mov r9,rsp
+    }
+    #[test]
+    fn test_mov_reg64_reg64_4() {
+        let mut code: Vec<u8> = Vec::new();
+        mov_reg64_reg64(&mut code, RegX64::RCX, RegX64::R12);
+        assert_eq!(code, vec![0x4C, 0x89, 0xE1]) // mov rcx,r12
     }
 }
