@@ -53,6 +53,13 @@ mod mov {
         assert_eq!(code, vec![0x4D, 0x8B, 0x0C, 0x24]) // mov r9,[r12]
     }
     #[test]
+    fn test_mov_reg64_ptr64_10() {
+        let mut code: Vec<u8> = Vec::new();
+        mov_reg64_ptr64(&mut code, RegX64::RAX, RegX64::R13);
+        assert_eq!(code, vec![0x49, 0x8B, 0x45, 0x00]) // mov rax,[r13]
+    }
+
+    #[test]
     fn test_mov_ptr64_reg64_1() {
         let mut code: Vec<u8> = Vec::new();
         mov_ptr64_reg64(&mut code, RegX64::RBP, RegX64::RDI);
@@ -69,6 +76,12 @@ mod mov {
         let mut code: Vec<u8> = Vec::new();
         mov_ptr64_reg64(&mut code, RegX64::R12, RegX64::R15);
         assert_eq!(code, vec![0x4D, 0x89, 0x3C, 0x24]) // mov [r12],r15
+    }
+    #[test]
+    fn test_mov_ptr64_reg64_4() {
+        let mut code: Vec<u8> = Vec::new();
+        mov_ptr64_reg64(&mut code, RegX64::R13, RegX64::R13);
+        assert_eq!(code, vec![0x4D, 0x89, 0x6D, 0x00]) // mov r13,[r13]
     }
 
     #[test]
@@ -247,7 +260,7 @@ mod pop {
         ]);
     }
     #[test]
-    #[rustfmt::skip]
+        #[rustfmt::skip]
     fn test_pop_ptr64_extended() {
         let mut code: Vec<u8> = Vec::new();
         pop_ptr64(&mut code, RegX64::R8);
