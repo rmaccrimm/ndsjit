@@ -61,8 +61,10 @@ pub fn mov_reg64_ptr64(code: &mut Vec<u8>, dest: RegX64, src: RegX64) {
     // RBP is a special case, and can't be used as address without offset, since mod=b0, rm=b101 is
     // reserved for disp32-only mode (rip relative)
     let mod_ = if src == RegX64::RBP { 1 } else { 0 };
-    let mod_rm = mod_rm_byte(mod_, dest, src);
-    write_bytes(code, &[rex_prefix(dest, src), 0x8b, mod_rm]);
+    write_bytes(
+        code,
+        &[rex_prefix(dest, src), 0x8b, mod_rm_byte(mod_, dest, src)],
+    );
     match src {
         // Set a disp8 of 0
         RegX64::RBP => code.push(0),
@@ -74,10 +76,21 @@ pub fn mov_reg64_ptr64(code: &mut Vec<u8>, dest: RegX64, src: RegX64) {
 }
 
 pub fn mov_ptr64_reg64(code: &mut Vec<u8>, dest: RegX64, src: RegX64) {
+    // RBP is a special case, and can't be used as address without offset, since mod=b0, rm=b101 is
+    // reserved for disp32-only mode (rip relative)
+    let mod_ = if dest == RegX64::RBP { 1 } else { 0 };
     write_bytes(
         code,
-        &[rex_prefix(src, dest), 0x89, mod_rm_byte(0, src, dest)],
-    )
+        &[rex_prefix(src, dest), 0x89, mod_rm_byte(mod_, src, dest)],
+    );
+    match dest {
+        // Set a disp8 of 0
+        RegX64::RBP => code.push(0),
+        // An SIB byte follows all any mov with r/m field = b100. Index = b100 indicates no index,
+        // base is the same as modr/m (b100) -> 00100100
+        RegX64::RSP | RegX64::R12 => code.push(0x24),
+        _ => (),
+    }
 }
 
 pub fn ret(code: &mut Vec<u8>) {
@@ -89,7 +102,6 @@ mod tests {
     use super::*;
 
     #[test]
-    // FAILS - possible alternate encoding, need to test functionality
     fn test_mov_reg64_ptr64_1() {
         let mut code: Vec<u8> = Vec::new();
         mov_reg64_ptr64(&mut code, RegX64::R8, RegX64::RBP);
@@ -120,7 +132,6 @@ mod tests {
         assert_eq!(code, vec![0x4C, 0x8B, 0x19]); // mov r11,[rcx]
     }
     #[test]
-    // FAILS - possible alternate encoding, need to test functionality
     fn test_mov_reg64_ptr64_7() {
         let mut code: Vec<u8> = Vec::new();
         mov_reg64_ptr64(&mut code, RegX64::RBP, RegX64::RSP);
@@ -133,10 +144,30 @@ mod tests {
         assert_eq!(code, vec![0x48, 0x8B, 0x0F]); // mov rcx,[rdi]
     }
     #[test]
-    // FAILS - possible alternate encoding, need to test functionality
     fn test_mov_reg64_ptr64_9() {
         let mut code: Vec<u8> = Vec::new();
         mov_reg64_ptr64(&mut code, RegX64::R9, RegX64::R12);
         assert_eq!(code, vec![0x4D, 0x8B, 0x0C, 0x24]) // mov r9,[r12]
+    }
+
+    #[test]
+    fn test_mov_ptr64_reg64_1() {
+        let mut code: Vec<u8> = Vec::new();
+        mov_ptr64_reg64(&mut code, RegX64::RBP, RegX64::RDI);
+        assert_eq!(code, vec![0x48, 0x89, 0x7D, 0x00]) // mov [rbp],rdi
+    }
+
+    #[test]
+    fn test_mov_ptr64_reg64_2() {
+        let mut code: Vec<u8> = Vec::new();
+        mov_ptr64_reg64(&mut code, RegX64::RSP, RegX64::RAX);
+        assert_eq!(code, vec![0x48, 0x89, 0x04, 0x24]) // mov [rsp],rax
+    }
+
+    #[test]
+    fn test_mov_ptr64_reg64_3() {
+        let mut code: Vec<u8> = Vec::new();
+        mov_ptr64_reg64(&mut code, RegX64::R12, RegX64::R15);
+        assert_eq!(code, vec![0x4D, 0x89, 0x3C, 0x24]) // mov [r12],r15
     }
 }
