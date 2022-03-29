@@ -142,9 +142,36 @@ pub fn push_ptr64(code: &mut Vec<u8>, reg: RegX64) {
     }
 }
 
-pub fn pop_reg64(code: &mut Vec<u8>, reg: RegX64) {}
+pub fn pop_reg64(code: &mut Vec<u8>, reg: RegX64) {
+    if (reg as u8) >= 8 {
+        code.push(rex_prefix(false, 0, reg as u8));
+    }
+    code.push(0x58 | (reg as u8 & 0x7));
+}
 
-pub fn pop_ptr64(code: &mut Vec<u8>, reg: RegX64) {}
+pub fn pop_ptr64(code: &mut Vec<u8>, reg: RegX64) {
+    let mod_ = if reg == RegX64::RBP || reg == RegX64::R13 {
+        1
+    } else {
+        0
+    };
+    if (reg as u8) >= 8 {
+        // For extended 64-bit registers (R8-15), reg msb is stored in the REX prefix
+        code.push(rex_prefix(false, 0, reg as u8));
+    }
+    write_bytes(
+        code,
+        &[0x8f | (reg as u8 & 0x7), mod_rm_byte(mod_, 0, reg as u8)],
+    );
+    match reg {
+        // Set a disp8 of 0
+        RegX64::RBP | RegX64::R13 => code.push(0),
+        // An SIB byte follows all any mov with r/m field = b100. Index = b100 indicates no index,
+        // base is the same as modr/m (b100) -> 00100100
+        RegX64::RSP | RegX64::R12 => code.push(0x24),
+        _ => (),
+    }
+}
 
 pub fn ret(code: &mut Vec<u8>) {
     code.push(0xc3)
