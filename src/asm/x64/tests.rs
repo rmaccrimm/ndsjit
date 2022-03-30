@@ -108,6 +108,73 @@ mod mov {
         mov_reg64_reg64(&mut code, RegX64::RCX, RegX64::R12);
         assert_eq!(code, vec![0x4C, 0x89, 0xE1]) // mov rcx,r12
     }
+
+    #[test]
+    fn test_mov_reg64_ptr64_sib() {
+        let mut code: Vec<u8> = Vec::new();
+        mov_reg64_ptr64_sib(&mut code, RegX64::RAX, RegX64::RSP, RegX64::R12, 8);
+        mov_reg64_ptr64_sib(&mut code, RegX64::RSP, RegX64::RBP, RegX64::RBP, 1);
+        mov_reg64_ptr64_sib(&mut code, RegX64::RDI, RegX64::R12, RegX64::R13, 4);
+        mov_reg64_ptr64_sib(&mut code, RegX64::RBX, RegX64::RDX, RegX64::RBP, 2);
+        mov_reg64_ptr64_sib(&mut code, RegX64::R13, RegX64::R13, RegX64::RAX, 1);
+        assert_eq!(
+            code,
+            vec![
+                0x4A, 0x8B, 0x04, 0xE4, // mov rax, [rsp + r12*8]
+                0x48, 0x8B, 0x64, 0x2D, 0x00, // mov rsp, [rbp + rbp]
+                0x4B, 0x8B, 0x3C, 0xAC, // mov rdi, [r12 + 4*r13]
+                0x48, 0x8B, 0x1C, 0x6A, // mov rbx, [rdx + 2*rbp]
+                0x4D, 0x8B, 0x6C, 0x05, 0x00 // mov r13, [r13 + rax]
+            ]
+        );
+    }
+    #[test]
+    #[should_panic]
+    fn test_mov_reg64_ptr64_sib_rsp_index() {
+        let mut code: Vec<u8> = Vec::new();
+        mov_reg64_ptr64_sib(&mut code, RegX64::RAX, RegX64::RAX, RegX64::RSP, 1);
+    }
+
+    #[test]
+    fn test_mov_reg64_ptr64_disp8() {
+        let mut code: Vec<u8> = Vec::new();
+        mov_reg64_ptr64_disp8(&mut code, RegX64::R8, RegX64::RBP, 127);
+        mov_reg64_ptr64_disp8(&mut code, RegX64::R9, RegX64::RSP, -127);
+        mov_reg64_ptr64_disp8(&mut code, RegX64::R10, RegX64::R12, 99);
+        mov_reg64_ptr64_disp8(&mut code, RegX64::R11, RegX64::R13, -45);
+        mov_reg64_ptr64_disp8(&mut code, RegX64::RCX, RegX64::R15, 109);
+        mov_reg64_ptr64_disp8(&mut code, RegX64::RBX, RegX64::RAX, 12);
+        assert_eq!(
+            code,
+            vec![
+                0x4C, 0x8B, 0x45, 0x7F, // mov r8,[rbp+127]
+                0x4C, 0x8B, 0x4C, 0x24, 0x81, // mov r9, [rsp+10]
+                0x4D, 0x8B, 0x54, 0x24, 0x63, // mov r10,[r12+99]
+                0x4D, 0x8B, 0x5D, 0xd3, // mov r11,[r13+45]
+                0x49, 0x8B, 0x4F, 0x6D, // mov rcx,[r15+109]
+                0x48, 0x8B, 0x58, 0x0C, // mov rbx,[rax+12]
+            ]
+        )
+    }
+    #[test]
+    fn test_mov_ptr64_reg64_disp8() {
+        let mut code: Vec<u8> = Vec::new();
+        mov_ptr64_reg64_disp8(&mut code, RegX64::RBP, RegX64::RAX, -78);
+        mov_ptr64_reg64_disp8(&mut code, RegX64::RSP, RegX64::RBX, 10);
+        mov_ptr64_reg64_disp8(&mut code, RegX64::R12, RegX64::RCX, -3);
+        mov_ptr64_reg64_disp8(&mut code, RegX64::R13, RegX64::R15, 44);
+        mov_ptr64_reg64_disp8(&mut code, RegX64::RDI, RegX64::RSI, -1);
+        assert_eq!(
+            code,
+            vec![
+                0x48, 0x89, 0x45, 0xB2, // mov [rbp-78], rax
+                0x48, 0x89, 0x5C, 0x24, 0x0A, // mov [rsp+10], rbx
+                0x49, 0x89, 0x4C, 0x24, 0xFD, // mov [r12-3], rcx
+                0x4D, 0x89, 0x7D, 0x2C, // mov [r13+44],r15
+                0x48, 0x89, 0x77, 0xFF, // mov [rdi-1], rsi
+            ]
+        )
+    }
 }
 
 #[cfg(test)]
