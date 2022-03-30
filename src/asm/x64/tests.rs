@@ -262,6 +262,27 @@ mod push {
             0x41, 0xff, 0x37,
         ]);
     }
+    #[test]
+    fn test_push_ptr64_disp8() {
+        let mut code: Vec<u8> = Vec::new();
+        push_ptr64_disp8(&mut code, RegX64::RAX, -39);
+        push_ptr64_disp8(&mut code, RegX64::RBP, 88);
+        push_ptr64_disp8(&mut code, RegX64::RSP, 99);
+        push_ptr64_disp8(&mut code, RegX64::R12, -13);
+        push_ptr64_disp8(&mut code, RegX64::R13, 109);
+        push_ptr64_disp8(&mut code, RegX64::R15, 2);
+        assert_eq!(
+            code,
+            vec![
+                0xFF, 0x70, 0xD9, // push [rax-39]
+                0xFF, 0x75, 0x58, // push [rbp+88]
+                0xFF, 0x74, 0x24, 0x63, // push [rsp+99]
+                0x41, 0xFF, 0x74, 0x24, 0xF3, // push [r12-13]
+                0x41, 0xFF, 0x75, 0x6D, // push [r13+109]
+                0x41, 0xFF, 0x77, 0x02, // push [r15+2]
+            ]
+        );
+    }
 }
 
 #[cfg(test)]
@@ -327,7 +348,7 @@ mod pop {
         ]);
     }
     #[test]
-        #[rustfmt::skip]
+    #[rustfmt::skip]
     fn test_pop_ptr64_extended() {
         let mut code: Vec<u8> = Vec::new();
         pop_ptr64(&mut code, RegX64::R8);
@@ -348,5 +369,26 @@ mod pop {
             0x41, 0x8f, 0x06, 
             0x41, 0x8f, 0x07,
         ]);
+    }
+    #[test]
+    fn test_pop_ptr64_disp8() {
+        let mut code: Vec<u8> = Vec::new();
+        pop_ptr64_disp8(&mut code, RegX64::RDX, -39);
+        pop_ptr64_disp8(&mut code, RegX64::RBP, 88);
+        pop_ptr64_disp8(&mut code, RegX64::RSP, 99);
+        pop_ptr64_disp8(&mut code, RegX64::R12, -13);
+        pop_ptr64_disp8(&mut code, RegX64::R13, 109);
+        pop_ptr64_disp8(&mut code, RegX64::R8, 2);
+        assert_eq!(
+            code,
+            vec![
+                0x8F, 0x42, 0xD9, // pop [rdx-39]
+                0x8F, 0x45, 0x58, // pop [rbp+88]
+                0x8F, 0x44, 0x24, 0x63, // pop [rsp+99]
+                0x41, 0x8F, 0x44, 0x24, 0xF3, // pop [r12-13]
+                0x41, 0x8F, 0x45, 0x6D, // pop [r13+109]
+                0x41, 0x8F, 0x40, 0x02, // pop [r8+2]
+            ]
+        );
     }
 }

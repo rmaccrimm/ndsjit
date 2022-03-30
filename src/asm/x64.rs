@@ -59,16 +59,12 @@ pub fn mov_reg64_reg64(code: &mut Vec<u8>, dest: RegX64, src: RegX64) {
 }
 
 pub fn mov_reg64_ptr64(code: &mut Vec<u8>, dest: RegX64, src: RegX64) {
-    // RBP is a special case, and can't be used as address without offset, since mod=b0, rm=b101 is
-    // reserved for disp32-only mode (rip relative)
     if src == RegX64::RBP || src == RegX64::R13 {
         return mov_reg64_ptr64_disp8(code, dest, src, 0);
     }
     code.push(rex_prefix(true, dest as u8, src as u8, 0));
     code.push(0x8b);
     code.push(mod_rm_byte(0, dest as u8, src as u8));
-    // An SIB byte follows all any mov with r/m field = b100. Index = b100 indicates no index,
-    // base is the same as modr/m (b100) -> 00100100
     if src == RegX64::RSP || src == RegX64::R12 {
         code.push(sib_byte(1, 4, src as u8))
     }
@@ -81,8 +77,6 @@ pub fn mov_ptr64_reg64(code: &mut Vec<u8>, dest: RegX64, src: RegX64) {
     code.push(rex_prefix(true, src as u8, dest as u8, 0));
     code.push(0x89);
     code.push(mod_rm_byte(0, src as u8, dest as u8));
-    // An SIB byte follows all any mov with r/m field = b100. Index = b100 indicates no index,
-    // base is the same as modr/m (b100) -> 00100100
     if dest == RegX64::RSP || dest == RegX64::R12 {
         code.push(0x24)
     }
@@ -128,7 +122,6 @@ pub fn mov_reg64_ptr64_sib(
 
 pub fn push_reg64(code: &mut Vec<u8>, reg: RegX64) {
     if (reg as u8) >= 8 {
-        // For extended 64-bit registers (R8-15), reg msb is stored in the REX prefix
         code.push(rex_prefix(false, 0, reg as u8, 0));
     }
     code.push(0x50 | (reg as u8 & 0x7))
@@ -142,47 +135,56 @@ pub fn pop_reg64(code: &mut Vec<u8>, reg: RegX64) {
 }
 
 pub fn push_ptr64(code: &mut Vec<u8>, reg: RegX64) {
-    let mode = if reg == RegX64::RBP || reg == RegX64::R13 {
-        1
-    } else {
-        0
-    };
+    if reg == RegX64::RBP || reg == RegX64::R13 {
+        return push_ptr64_disp8(code, reg, 0);
+    }
     if (reg as u8) >= 8 {
-        // For extended 64-bit registers (R8-15), reg msb is stored in the REX prefix
         code.push(rex_prefix(false, 0, reg as u8, 0));
     }
     code.push(0xff | (reg as u8 & 0x7));
-    code.push(mod_rm_byte(mode, 0x6, reg as u8));
-    match reg {
-        // Set a disp8 of 0
-        RegX64::RBP | RegX64::R13 => code.push(0),
-        // An SIB byte follows all any mov with r/m field = b100. Index = b100 indicates no index,
-        // base is the same as modr/m (b100) -> 00100100
-        RegX64::RSP | RegX64::R12 => code.push(0x24),
-        _ => (),
+    code.push(mod_rm_byte(0, 0x6, reg as u8));
+    if reg == RegX64::RSP || reg == RegX64::R12 {
+        code.push(0x24);
     }
 }
 
 pub fn pop_ptr64(code: &mut Vec<u8>, reg: RegX64) {
-    let mode = if reg == RegX64::RBP || reg == RegX64::R13 {
-        1
-    } else {
-        0
-    };
+    if reg == RegX64::RBP || reg == RegX64::R13 {
+        return pop_ptr64_disp8(code, reg, 0);
+    }
     if (reg as u8) >= 8 {
         // For extended 64-bit registers (R8-15), reg msb is stored in the REX prefix
         code.push(rex_prefix(false, 0, reg as u8, 0));
     }
     code.push(0x8f | (reg as u8 & 0x7));
-    code.push(mod_rm_byte(mode, 0, reg as u8));
-    match reg {
-        // Set a disp8 of 0
-        RegX64::RBP | RegX64::R13 => code.push(0),
-        // An SIB byte follows all any mov with r/m field = b100. Index = b100 indicates no index,
-        // base is the same as modr/m (b100) -> 00100100
-        RegX64::RSP | RegX64::R12 => code.push(0x24),
-        _ => (),
+    code.push(mod_rm_byte(0, 0, reg as u8));
+    if reg == RegX64::RSP || reg == RegX64::R12 {
+        code.push(sib_byte(1, 4, reg as u8));
     }
+}
+
+pub fn push_ptr64_disp8(code: &mut Vec<u8>, reg: RegX64, disp: i8) {
+    if (reg as u8) >= 8 {
+        code.push(rex_prefix(false, 0, reg as u8, 0));
+    }
+    code.push(0xff | (reg as u8 & 0x7));
+    code.push(mod_rm_byte(1, 0x6, reg as u8));
+    if reg == RegX64::RSP || reg == RegX64::R12 {
+        code.push(sib_byte(1, 4, reg as u8));
+    }
+    code.push(disp as u8);
+}
+
+pub fn pop_ptr64_disp8(code: &mut Vec<u8>, reg: RegX64, disp: i8) {
+    if (reg as u8) >= 8 {
+        code.push(rex_prefix(false, 0, reg as u8, 0));
+    }
+    code.push(0x8f | (reg as u8 & 0x7));
+    code.push(mod_rm_byte(1, 0, reg as u8));
+    if reg == RegX64::RSP || reg == RegX64::R12 {
+        code.push(sib_byte(1, 4, reg as u8));
+    }
+    code.push(disp as u8);
 }
 
 pub fn ret(code: &mut Vec<u8>) {
