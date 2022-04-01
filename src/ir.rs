@@ -38,7 +38,7 @@ pub enum Operand {
     // Will probably include scale and offsets later
     Ptr(VReg),
     // Don't know if this will work yet
-    // Imm(u32),
+    Imm(u32),
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]

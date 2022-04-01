@@ -1,14 +1,14 @@
-mod alloc;
+pub mod alloc;
 mod execbuffer;
 mod x64;
 
-use super::ir::{Instr, Operand, VReg};
-use alloc::RegAllocation;
+use super::ir::{Instr, Opcode::MOV, Operand, Operand::Reg, VReg};
+use alloc::{MappedReg::Phys, RegAllocation};
 use execbuffer::ExecBuffer;
 use x64::*;
 
 pub struct AssemblerX64 {
-    code: Vec<u8>,
+    pub code: Vec<u8>,
     reg_alloc: RegAllocation,
 }
 
@@ -36,23 +36,40 @@ impl AssemblerX64 {
     // Initialize physical register values with those in virtual registers (looked up through
     // pointer in %rcx) and set up the stack. If we have to spill to memory, I guess that will make
     // use of the (physical) stack?
-    fn gen_prologue(&mut self /*, reg_allocation: HashMap<RegArm32, RegX64>*/) -> &mut Self {
-        mov_reg64_ptr64(&mut self.code, RegX64::RAX, RegX64::RCX);
+    pub fn gen_prologue(&mut self) -> &mut Self {
+        push_reg64(&mut self.code, RegX64::RBP);
+        mov_reg64_reg64(&mut self.code, RegX64::RBP, RegX64::RSP);
         self
     }
 
     // Move physical register values back to virtual state (through pointer still stored in %rcx -
     // maybe should move to stack to free up another register?)
-    fn gen_epilogue(&mut self /*, reg_allocation: HashMap<RegArm32, RegX64> */) -> &mut Self {
-        mov_ptr64_reg64(&mut self.code, RegX64::RCX, RegX64::RAX);
+    pub fn gen_epilogue(&mut self) -> &mut Self {
+        mov_reg64_reg64(&mut self.code, RegX64::RSP, RegX64::RBP);
+        pop_reg64(&mut self.code, RegX64::RBP);
+        ret(&mut self.code);
         self
     }
 
     pub fn emit(&mut self, instr: Instr) -> &mut Self {
-        self
+        match instr.opcode {
+            MOV => self.mov(instr.operands[0].unwrap(), instr.operands[1].unwrap()),
+            _ => self,
+        }
     }
 
     fn mov(&mut self, dest: Operand, src: Operand) -> &mut Self {
+        match (dest, src) {
+            (Reg(d), Reg(s)) => match (self.reg_alloc.get(d), self.reg_alloc.get(s)) {
+                (Phys(d), Phys(s)) => {
+                    dbg!(s);
+                    dbg!(d);
+                    mov_reg64_reg64(&mut self.code, s, d)
+                }
+                _ => panic!("Unimplemented"),
+            },
+            _ => panic!("Unimplemented"),
+        }
         self
     }
 
@@ -61,3 +78,6 @@ impl AssemblerX64 {
         self
     }
 }
+
+#[cfg(test)]
+mod tests {}
