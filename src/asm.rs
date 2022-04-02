@@ -10,7 +10,7 @@ use execbuffer::ExecBuffer;
 use x64::*;
 
 pub struct AssemblerX64 {
-    pub code: Vec<u8>,
+    pub code: EmitterX64,
     reg_alloc: RegAllocation,
 }
 
@@ -26,29 +26,26 @@ get_exec_buffer will be called, something like:
 impl AssemblerX64 {
     pub fn new(reg_alloc: RegAllocation) -> AssemblerX64 {
         AssemblerX64 {
-            code: Vec::new(),
+            code: EmitterX64::new(),
             reg_alloc,
         }
     }
 
     pub fn get_exec_buffer(self) -> ExecBuffer {
-        ExecBuffer::from_vec(self.code).unwrap()
+        ExecBuffer::from_vec(self.code.get_buf()).unwrap()
     }
 
     // Initialize physical register values with those in virtual registers (looked up through
     // pointer in %rcx) and set up the stack. If we have to spill to memory, I guess that will make
     // use of the (physical) stack?
     pub fn gen_prologue(&mut self) -> &mut Self {
-        push_reg64(&mut self.code, RegX64::RBP);
-        mov_reg64_reg64(&mut self.code, RegX64::RBP, RegX64::RSP);
+        self.code
+            .push_reg64(RegX64::RBP)
+            .mov_reg64_reg64(RegX64::RBP, RegX64::RSP);
         for (i, mapping) in self.reg_alloc.mapping.iter().enumerate() {
             if let Phys(r) = mapping {
-                mov_reg64_ptr64_disp8(
-                    &mut self.code,
-                    *r,
-                    RegX64::RCX,
-                    (mem::size_of::<u64>() * i) as i8,
-                );
+                self.code
+                    .mov_reg64_ptr64_disp8(*r, RegX64::RCX, (mem::size_of::<u64>() * i) as i8);
             }
         }
         self
@@ -59,17 +56,14 @@ impl AssemblerX64 {
     pub fn gen_epilogue(&mut self) -> &mut Self {
         for (i, mapping) in self.reg_alloc.mapping.iter().enumerate() {
             if let Phys(r) = mapping {
-                mov_ptr64_reg64_disp8(
-                    &mut self.code,
-                    RegX64::RCX,
-                    *r,
-                    (mem::size_of::<u64>() * i) as i8,
-                );
+                self.code
+                    .mov_ptr64_reg64_disp8(RegX64::RCX, *r, (mem::size_of::<u64>() * i) as i8);
             }
         }
-        mov_reg64_reg64(&mut self.code, RegX64::RSP, RegX64::RBP);
-        pop_reg64(&mut self.code, RegX64::RBP);
-        ret(&mut self.code);
+        self.code
+            .mov_reg64_reg64(RegX64::RSP, RegX64::RBP)
+            .pop_reg64(RegX64::RBP)
+            .ret();
         self
     }
 
@@ -86,7 +80,7 @@ impl AssemblerX64 {
                 (Phys(d), Phys(s)) => {
                     dbg!(d);
                     dbg!(s);
-                    mov_reg64_reg64(&mut self.code, d, s)
+                    self.code.mov_reg64_reg64(d, s);
                 }
                 _ => panic!("Unimplemented"),
             },
@@ -96,7 +90,7 @@ impl AssemblerX64 {
     }
 
     fn ret(&mut self) -> &mut Self {
-        ret(&mut self.code);
+        self.code.ret();
         self
     }
 }
