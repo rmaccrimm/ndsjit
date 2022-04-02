@@ -19,10 +19,6 @@ fn main() {
         operands: [Some(Reg(R0)), Some(Reg(R8)), None],
     };
     asm.gen_prologue().emit(mov).gen_epilogue();
-    for x in asm.code.iter() {
-        println!("{:02x}", x);
-    }
-    // asm.code.iter().map(|x| println!("{:#x}", x));
     let func = asm.get_exec_buffer();
 
     let mut cpu = VirtualState::new();

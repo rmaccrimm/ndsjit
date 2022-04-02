@@ -1,4 +1,8 @@
-use super::{Instr, Operand, RegX64, VReg};
+use super::{
+    Instr, Operand,
+    Operand::{Ptr, Reg},
+    RegX64, VReg,
+};
 use crate::ir::Opcode;
 
 use std::vec::Vec;
@@ -62,7 +66,7 @@ impl RegAllocation {
         let mut vregs: Vec<VReg> = Vec::new();
         for ir in instructions {
             for op in ir.operands {
-                if let Some(Operand::Reg(reg)) | Some(Operand::Ptr(reg)) = op {
+                if let Some(Reg(reg)) | Some(Ptr(reg)) = op {
                     if !vregs.contains(&reg) {
                         vregs.push(reg);
                     }
@@ -135,12 +139,12 @@ mod tests {
     #[test]
     fn test_swap() {
         let mut alloc = RegAllocation::new(vec![]);
-        *alloc.get(VReg::R0) = MappedReg::Phys(RegX64::RDX);
-        *alloc.get(VReg::R1) = MappedReg::Spill(0);
+        *alloc.get_mut(VReg::R0) = MappedReg::Phys(RegX64::RDX);
+        *alloc.get_mut(VReg::R1) = MappedReg::Spill(0);
 
         alloc.swap(VReg::R0, VReg::R1);
-        assert_eq!(*alloc.get(VReg::R0), MappedReg::Spill(0));
-        assert_eq!(*alloc.get(VReg::R1), MappedReg::Phys(RegX64::RDX));
+        assert_eq!(*alloc.get_mut(VReg::R0), MappedReg::Spill(0));
+        assert_eq!(*alloc.get_mut(VReg::R1), MappedReg::Phys(RegX64::RDX));
     }
 
     #[test]

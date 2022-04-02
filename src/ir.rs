@@ -35,9 +35,7 @@ pub enum VReg {
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Operand {
     Reg(VReg),
-    // Will probably include scale and offsets later
     Ptr(VReg),
-    // Don't know if this will work yet
     Imm(u32),
 }
 
