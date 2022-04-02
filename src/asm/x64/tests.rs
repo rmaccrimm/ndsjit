@@ -83,6 +83,7 @@ fn test_mov_reg64_ptr64_sib() {
         ]
     );
 }
+
 #[test]
 #[should_panic]
 fn test_mov_reg64_ptr64_sib_rsp_index() {
@@ -111,6 +112,7 @@ fn test_mov_reg64_ptr64_disp8() {
         ]
     )
 }
+
 #[test]
 fn test_mov_ptr64_reg64_disp8() {
     let mut code = EmitterX64::new();
@@ -147,29 +149,31 @@ fn test_push_reg64_base() {
         vec![0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57]
     );
 }
+
 #[test]
-    #[rustfmt::skip]
-    fn test_push_reg64_extended() {
-        let mut code = EmitterX64::new();
-        code.push_reg64(RegX64::R8)
-            .push_reg64(RegX64::R9)
-            .push_reg64(RegX64::R10)
-            .push_reg64(RegX64::R11)
-            .push_reg64(RegX64::R12)
-            .push_reg64(RegX64::R13)
-            .push_reg64(RegX64::R14)
-            .push_reg64(RegX64::R15);
-        assert_eq!(code.get_buf(), vec![
-            0x41, 0x50, 
-            0x41, 0x51, 
-            0x41, 0x52,
-            0x41, 0x53, 
-            0x41, 0x54, 
-            0x41, 0x55, 
-            0x41, 0x56, 
-            0x41, 0x57,
-        ]);
-    }
+#[rustfmt::skip]
+fn test_push_reg64_extended() {
+    let mut code = EmitterX64::new();
+    code.push_reg64(RegX64::R8)
+        .push_reg64(RegX64::R9)
+        .push_reg64(RegX64::R10)
+        .push_reg64(RegX64::R11)
+        .push_reg64(RegX64::R12)
+        .push_reg64(RegX64::R13)
+        .push_reg64(RegX64::R14)
+        .push_reg64(RegX64::R15);
+    assert_eq!(code.get_buf(), vec![
+        0x41, 0x50, 
+        0x41, 0x51, 
+        0x41, 0x52,
+        0x41, 0x53, 
+        0x41, 0x54, 
+        0x41, 0x55, 
+        0x41, 0x56, 
+        0x41, 0x57,
+    ]);
+}
+
 #[test]
     #[rustfmt::skip]
     fn test_push_ptr64_base() {
@@ -193,29 +197,31 @@ fn test_push_reg64_base() {
             0xff, 0x37,
         ]);
     }
+
 #[test]
-    #[rustfmt::skip]
-    fn test_push_ptr64_extended() {
-        let mut code = EmitterX64::new();
-        code.push_ptr64(RegX64::R8)
-            .push_ptr64(RegX64::R9)
-            .push_ptr64(RegX64::R10)
-            .push_ptr64(RegX64::R11)
-            .push_ptr64(RegX64::R12)
-            .push_ptr64(RegX64::R13)
-            .push_ptr64(RegX64::R14)
-            .push_ptr64(RegX64::R15);
-        assert_eq!(code.get_buf(), vec![
-            0x41, 0xff, 0x30, 
-            0x41, 0xff, 0x31, 
-            0x41, 0xff, 0x32, 
-            0x41, 0xff, 0x33, 
-            0x41, 0xff, 0x34, 0x24, 
-            0x41, 0xff, 0x75, 0x00, 
-            0x41, 0xff, 0x36, 
-            0x41, 0xff, 0x37,
-        ]);
-    }
+#[rustfmt::skip]
+fn test_push_ptr64_extended() {
+    let mut code = EmitterX64::new();
+    code.push_ptr64(RegX64::R8)
+        .push_ptr64(RegX64::R9)
+        .push_ptr64(RegX64::R10)
+        .push_ptr64(RegX64::R11)
+        .push_ptr64(RegX64::R12)
+        .push_ptr64(RegX64::R13)
+        .push_ptr64(RegX64::R14)
+        .push_ptr64(RegX64::R15);
+    assert_eq!(code.get_buf(), vec![
+        0x41, 0xff, 0x30, 
+        0x41, 0xff, 0x31, 
+        0x41, 0xff, 0x32, 
+        0x41, 0xff, 0x33, 
+        0x41, 0xff, 0x34, 0x24, 
+        0x41, 0xff, 0x75, 0x00, 
+        0x41, 0xff, 0x36, 
+        0x41, 0xff, 0x37,
+    ]);
+}
+
 #[test]
 fn test_push_ptr64_disp8() {
     let mut code = EmitterX64::new();
@@ -254,75 +260,79 @@ fn test_pop_reg64_base() {
         vec![0x58, 0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e, 0x5f]
     );
 }
+
 #[test]
-    #[rustfmt::skip]
-    fn test_pop_reg64_extended() {
-        let mut code = EmitterX64::new();
-        code.pop_reg64(RegX64::R8);
-        code.pop_reg64(RegX64::R9);
-        code.pop_reg64(RegX64::R10);
-        code.pop_reg64(RegX64::R11);
-        code.pop_reg64(RegX64::R12);
-        code.pop_reg64(RegX64::R13);
-        code.pop_reg64(RegX64::R14);
-        code.pop_reg64(RegX64::R15);
-        assert_eq!(code.get_buf(), vec![
-            0x41, 0x58, 
-            0x41, 0x59, 
-            0x41, 0x5a,
-            0x41, 0x5b, 
-            0x41, 0x5c, 
-            0x41, 0x5d, 
-            0x41, 0x5e, 
-            0x41, 0x5f,
-        ]);
-    }
+#[rustfmt::skip]
+fn test_pop_reg64_extended() {
+    let mut code = EmitterX64::new();
+    code.pop_reg64(RegX64::R8);
+    code.pop_reg64(RegX64::R9);
+    code.pop_reg64(RegX64::R10);
+    code.pop_reg64(RegX64::R11);
+    code.pop_reg64(RegX64::R12);
+    code.pop_reg64(RegX64::R13);
+    code.pop_reg64(RegX64::R14);
+    code.pop_reg64(RegX64::R15);
+    assert_eq!(code.get_buf(), vec![
+        0x41, 0x58, 
+        0x41, 0x59, 
+        0x41, 0x5a,
+        0x41, 0x5b, 
+        0x41, 0x5c, 
+        0x41, 0x5d, 
+        0x41, 0x5e, 
+        0x41, 0x5f,
+    ]);
+}
+
 #[test]
-    #[rustfmt::skip]
-    fn test_pop_ptr64_base() {
-        let mut code = EmitterX64::new();
-        code.pop_ptr64(RegX64::RAX);
-        code.pop_ptr64(RegX64::RCX);
-        code.pop_ptr64(RegX64::RDX);
-        code.pop_ptr64(RegX64::RBX);
-        code.pop_ptr64(RegX64::RSP);
-        code.pop_ptr64(RegX64::RBP);
-        code.pop_ptr64(RegX64::RSI);
-        code.pop_ptr64(RegX64::RDI);
-        assert_eq!(code.get_buf(), vec![
-            0x8f, 0x00, 
-            0x8f, 0x01, 
-            0x8f, 0x02, 
-            0x8f, 0x03, 
-            0x8f, 0x04, 0x24, 
-            0x8f, 0x45, 0x00, 
-            0x8f, 0x06, 
-            0x8f, 0x07,
-        ]);
-    }
+#[rustfmt::skip]
+fn test_pop_ptr64_base() {
+    let mut code = EmitterX64::new();
+    code.pop_ptr64(RegX64::RAX);
+    code.pop_ptr64(RegX64::RCX);
+    code.pop_ptr64(RegX64::RDX);
+    code.pop_ptr64(RegX64::RBX);
+    code.pop_ptr64(RegX64::RSP);
+    code.pop_ptr64(RegX64::RBP);
+    code.pop_ptr64(RegX64::RSI);
+    code.pop_ptr64(RegX64::RDI);
+    assert_eq!(code.get_buf(), vec![
+        0x8f, 0x00, 
+        0x8f, 0x01, 
+        0x8f, 0x02, 
+        0x8f, 0x03, 
+        0x8f, 0x04, 0x24, 
+        0x8f, 0x45, 0x00, 
+        0x8f, 0x06, 
+        0x8f, 0x07,
+    ]);
+}
+
 #[test]
-    #[rustfmt::skip]
-    fn test_pop_ptr64_extended() {
-        let mut code = EmitterX64::new();
-        code.pop_ptr64(RegX64::R8);
-        code.pop_ptr64(RegX64::R9);
-        code.pop_ptr64(RegX64::R10);
-        code.pop_ptr64(RegX64::R11);
-        code.pop_ptr64(RegX64::R12);
-        code.pop_ptr64(RegX64::R13);
-        code.pop_ptr64(RegX64::R14);
-        code.pop_ptr64(RegX64::R15);
-        assert_eq!(code.get_buf(), vec![
-            0x41, 0x8f, 0x00, 
-            0x41, 0x8f, 0x01, 
-            0x41, 0x8f, 0x02, 
-            0x41, 0x8f, 0x03, 
-            0x41, 0x8f, 0x04, 0x24, 
-            0x41, 0x8f, 0x45, 0x00, 
-            0x41, 0x8f, 0x06, 
-            0x41, 0x8f, 0x07,
-        ]);
-    }
+#[rustfmt::skip]
+fn test_pop_ptr64_extended() {
+    let mut code = EmitterX64::new();
+    code.pop_ptr64(RegX64::R8);
+    code.pop_ptr64(RegX64::R9);
+    code.pop_ptr64(RegX64::R10);
+    code.pop_ptr64(RegX64::R11);
+    code.pop_ptr64(RegX64::R12);
+    code.pop_ptr64(RegX64::R13);
+    code.pop_ptr64(RegX64::R14);
+    code.pop_ptr64(RegX64::R15);
+    assert_eq!(code.get_buf(), vec![
+        0x41, 0x8f, 0x00, 
+        0x41, 0x8f, 0x01, 
+        0x41, 0x8f, 0x02, 
+        0x41, 0x8f, 0x03, 
+        0x41, 0x8f, 0x04, 0x24, 
+        0x41, 0x8f, 0x45, 0x00, 
+        0x41, 0x8f, 0x06, 
+        0x41, 0x8f, 0x07,
+    ]);
+}
+
 #[test]
 fn test_pop_ptr64_disp8() {
     let mut code = EmitterX64::new();
