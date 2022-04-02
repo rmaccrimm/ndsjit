@@ -2,6 +2,8 @@ pub mod alloc;
 mod execbuffer;
 mod x64;
 
+use std::mem;
+
 use super::ir::{Instr, Opcode::MOV, Operand, Operand::Reg, VReg};
 use alloc::{MappedReg::Phys, RegAllocation};
 use execbuffer::ExecBuffer;
@@ -39,12 +41,32 @@ impl AssemblerX64 {
     pub fn gen_prologue(&mut self) -> &mut Self {
         push_reg64(&mut self.code, RegX64::RBP);
         mov_reg64_reg64(&mut self.code, RegX64::RBP, RegX64::RSP);
+        for (i, mapping) in self.reg_alloc.mapping.iter().enumerate() {
+            if let Phys(r) = mapping {
+                mov_reg64_ptr64_disp8(
+                    &mut self.code,
+                    *r,
+                    RegX64::RCX,
+                    (mem::size_of::<u64>() * i) as i8,
+                );
+            }
+        }
         self
     }
 
     // Move physical register values back to virtual state (through pointer still stored in %rcx -
     // maybe should move to stack to free up another register?)
     pub fn gen_epilogue(&mut self) -> &mut Self {
+        for (i, mapping) in self.reg_alloc.mapping.iter().enumerate() {
+            if let Phys(r) = mapping {
+                mov_ptr64_reg64_disp8(
+                    &mut self.code,
+                    RegX64::RCX,
+                    *r,
+                    (mem::size_of::<u64>() * i) as i8,
+                );
+            }
+        }
         mov_reg64_reg64(&mut self.code, RegX64::RSP, RegX64::RBP);
         pop_reg64(&mut self.code, RegX64::RBP);
         ret(&mut self.code);
@@ -62,9 +84,9 @@ impl AssemblerX64 {
         match (dest, src) {
             (Reg(d), Reg(s)) => match (self.reg_alloc.get(d), self.reg_alloc.get(s)) {
                 (Phys(d), Phys(s)) => {
-                    dbg!(s);
                     dbg!(d);
-                    mov_reg64_reg64(&mut self.code, s, d)
+                    dbg!(s);
+                    mov_reg64_reg64(&mut self.code, d, s)
                 }
                 _ => panic!("Unimplemented"),
             },
