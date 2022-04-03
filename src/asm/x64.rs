@@ -146,7 +146,54 @@ impl EmitterX64 {
         self
     }
 
-    pub fn mov_reg64_imm64(&mut self, dest: RegX64, imm: u64) {}
+    pub fn mov_reg64_imm32(&mut self, dest: RegX64, imm: i32) -> &mut Self {
+        self.buf.push(rex_prefix(true, 0, dest as u8, 0));
+        self.buf.push(0xc7);
+        self.buf.push(mod_rm_byte(Value, 0, dest as u8));
+        for i in 0..4 {
+            self.buf.push((imm >> (8 * i) & 0xff) as u8);
+        }
+        self
+    }
+
+    pub fn mov_ptr64_imm32(&mut self, dest: RegX64, imm: i32) -> &mut Self {
+        if let RegX64::RBP | RegX64::R13 = dest {
+            return self.mov_ptr64_imm32_disp8(dest, imm, 0);
+        };
+        self.buf.push(rex_prefix(true, 0, dest as u8, 0));
+        self.buf.push(0xc7);
+        self.buf.push(mod_rm_byte(Base, 0, dest as u8));
+        match dest {
+            RegX64::RBP | RegX64::R13 => {
+                self.buf.push(0);
+            }
+            RegX64::RSP | RegX64::R12 => {
+                self.buf.push(sib_byte(1, 4, dest as u8));
+            }
+            _ => (),
+        };
+        for i in 0..4 {
+            self.buf.push((imm >> (8 * i) & 0xff) as u8);
+        }
+        self
+    }
+
+    pub fn mov_ptr64_imm32_disp8(&mut self, dest: RegX64, imm: i32, disp: i8) -> &mut Self {
+        self.buf.push(rex_prefix(true, 0, dest as u8, 0));
+        self.buf.push(0xc7);
+        self.buf.push(mod_rm_byte(BaseDisp8, 0, dest as u8));
+        match dest {
+            RegX64::RSP | RegX64::R12 => {
+                self.buf.push(sib_byte(1, 4, dest as u8));
+            }
+            _ => (),
+        };
+        self.buf.push(disp as u8);
+        for i in 0..4 {
+            self.buf.push((imm >> (8 * i) & 0xff) as u8);
+        }
+        self
+    }
 
     pub fn push_reg64(&mut self, reg: RegX64) -> &mut Self {
         if (reg as u8) >= 8 {
