@@ -20,30 +20,42 @@ pub enum RegX64 {
     R15 = 15,
 }
 
+/// First 2 bits of ModR/M byte. Indicates what kind of displacement follows an instruction when
+/// using a register as a pointer, that the register is being used as a value directly
 #[derive(Copy, Clone)]
-enum AddrMode {
-    Base = 0,
-    BaseDisp8 = 1,
-    BaseDisp32 = 2,
+enum DispMode {
+    NoDisp = 0,
+    Disp8 = 1,
+    Disp32 = 2,
     Value = 3,
 }
-use AddrMode::*;
+use DispMode::*;
 
+/// REX prefix byte, which extends the ModR/M and/or SIB bytes in 64 bit mode by encoding the msb
+/// for operands. W indicates 64-bit operands, but is sometimes not needed (e.g. in push/pop)
 fn rex_prefix(w: bool, reg: u8, rm_or_base: u8, index: u8) -> u8 {
     let rex = if w { 0x48 } else { 0x40 };
     rex | ((reg >> 3) & 1) << 2 | ((index) >> 3 & 1) << 1 | ((rm_or_base as u8 >> 3) & 1)
 }
 
-fn mod_rm_byte(mode: AddrMode, reg_or_op: u8, rm: u8) -> u8 {
+/// r/m value of b100 in the modr/m byte indicates the scale-index-bound addressing mode is used
+const SIB_RM: u8 = 0b100;
+
+/// ModR/M byte which encodes an addressing mode, and the 3 lsb of a register operand (reg) and
+/// register or memory operand (r/m). Alternatively the reg field is sometimes an extension of the
+/// instruction opcode
+fn mod_rm_byte(mode: DispMode, reg_or_op: u8, rm: u8) -> u8 {
     (mode as u8 & 0x3) << 6 | (reg_or_op & 0x7) << 3 | (rm & 0x7)
 }
 
+/// SIB follows ModR/M byte when using scale-index-bound add
 fn sib_byte(scale: u8, index: u8, base: u8) -> u8 {
     assert!(scale == 1 || scale == 2 || scale == 4 || scale == 8);
     let scale = [0, 0, 1, 0, 2, 0, 0, 0, 3][scale as usize] as u8;
     scale << 6 | (index & 0x7) << 3 | (base & 0x7)
 }
 
+/// Stores a vec of encoded x86_64 instructons
 pub struct EmitterX64 {
     buf: Vec<u8>,
 }
@@ -57,7 +69,6 @@ impl EmitterX64 {
         self.buf
     }
 
-    // Bits 3-7 are constant, bit 2 is the msb of the register field, bit 0 is the msb of the r/m field
     pub fn add_rax_imm32(&mut self, imm: u32) -> &mut Self {
         self.buf.push(0x48);
         self.buf.push(0x05);
@@ -81,7 +92,7 @@ impl EmitterX64 {
         }
         self.buf.push(rex_prefix(true, dest as u8, src as u8, 0));
         self.buf.push(0x8b);
-        self.buf.push(mod_rm_byte(Base, dest as u8, src as u8));
+        self.buf.push(mod_rm_byte(NoDisp, dest as u8, src as u8));
         if src == RegX64::RSP || src == RegX64::R12 {
             self.buf.push(sib_byte(1, 4, src as u8))
         }
@@ -94,7 +105,7 @@ impl EmitterX64 {
         }
         self.buf.push(rex_prefix(true, src as u8, dest as u8, 0));
         self.buf.push(0x89);
-        self.buf.push(mod_rm_byte(Base, src as u8, dest as u8));
+        self.buf.push(mod_rm_byte(NoDisp, src as u8, dest as u8));
         if dest == RegX64::RSP || dest == RegX64::R12 {
             self.buf.push(0x24)
         }
@@ -104,7 +115,7 @@ impl EmitterX64 {
     pub fn mov_reg64_ptr64_disp8(&mut self, dest: RegX64, src: RegX64, disp: i8) -> &mut Self {
         self.buf.push(rex_prefix(true, dest as u8, src as u8, 0));
         self.buf.push(0x8b);
-        self.buf.push(mod_rm_byte(BaseDisp8, dest as u8, src as u8));
+        self.buf.push(mod_rm_byte(Disp8, dest as u8, src as u8));
         if src == RegX64::RSP || src == RegX64::R12 {
             self.buf.push(sib_byte(1, 4, src as u8))
         }
@@ -115,7 +126,7 @@ impl EmitterX64 {
     pub fn mov_ptr64_reg64_disp8(&mut self, dest: RegX64, src: RegX64, disp: i8) -> &mut Self {
         self.buf.push(rex_prefix(true, src as u8, dest as u8, 0));
         self.buf.push(0x89);
-        self.buf.push(mod_rm_byte(BaseDisp8, src as u8, dest as u8));
+        self.buf.push(mod_rm_byte(Disp8, src as u8, dest as u8));
         if dest == RegX64::RSP || dest == RegX64::R12 {
             self.buf.push(sib_byte(1, 4, dest as u8))
         }
@@ -132,27 +143,47 @@ impl EmitterX64 {
     ) -> &mut Self {
         assert!(index != RegX64::RSP);
         let mode = match base {
-            RegX64::RBP | RegX64::R13 => BaseDisp8,
-            _ => Base,
+            RegX64::RBP | RegX64::R13 => Disp8,
+            _ => NoDisp,
         };
         self.buf
             .push(rex_prefix(true, dest as u8, base as u8, index as u8));
         self.buf.push(0x8b);
-        self.buf.push(mod_rm_byte(mode, dest as u8, 0x4));
+        self.buf.push(mod_rm_byte(mode, dest as u8, SIB_RM));
         self.buf.push(sib_byte(scale, index as u8, base as u8));
-        if let BaseDisp8 = mode {
+        if let Disp8 = mode {
             self.buf.push(0);
         }
         self
     }
 
+    /// mov [base + scale * index + disp32], src
+    pub fn mov_ptr64_reg64_sib_disp32(
+        &mut self,
+        base: RegX64,
+        scale: u8,
+        index: RegX64,
+        disp: i32,
+        src: RegX64,
+    ) -> &mut Self {
+        assert!(index != RegX64::RSP);
+        self.buf.extend_from_slice(&[
+            rex_prefix(true, src as u8, base as u8, index as u8),
+            0x89,
+            mod_rm_byte(Disp32, src as u8, SIB_RM),
+            sib_byte(scale, index as u8, base as u8),
+        ]);
+        self.buf.extend_from_slice(&disp.to_le_bytes());
+        self
+    }
+
     pub fn mov_reg64_imm32(&mut self, dest: RegX64, imm: i32) -> &mut Self {
-        self.buf.push(rex_prefix(true, 0, dest as u8, 0));
-        self.buf.push(0xc7);
-        self.buf.push(mod_rm_byte(Value, 0, dest as u8));
-        for i in 0..4 {
-            self.buf.push((imm >> (8 * i) & 0xff) as u8);
-        }
+        self.buf.extend_from_slice(&[
+            rex_prefix(true, 0, dest as u8, 0),
+            0xc7,
+            mod_rm_byte(Value, 0, dest as u8),
+        ]);
+        self.buf.extend_from_slice(&imm.to_le_bytes());
         self
     }
 
@@ -162,7 +193,7 @@ impl EmitterX64 {
         };
         self.buf.push(rex_prefix(true, 0, dest as u8, 0));
         self.buf.push(0xc7);
-        self.buf.push(mod_rm_byte(Base, 0, dest as u8));
+        self.buf.push(mod_rm_byte(NoDisp, 0, dest as u8));
         match dest {
             RegX64::RBP | RegX64::R13 => {
                 self.buf.push(0);
@@ -181,7 +212,7 @@ impl EmitterX64 {
     pub fn mov_ptr64_imm32_disp8(&mut self, dest: RegX64, imm: i32, disp: i8) -> &mut Self {
         self.buf.push(rex_prefix(true, 0, dest as u8, 0));
         self.buf.push(0xc7);
-        self.buf.push(mod_rm_byte(BaseDisp8, 0, dest as u8));
+        self.buf.push(mod_rm_byte(Disp8, 0, dest as u8));
         match dest {
             RegX64::RSP | RegX64::R12 => {
                 self.buf.push(sib_byte(1, 4, dest as u8));
@@ -219,7 +250,7 @@ impl EmitterX64 {
             self.buf.push(rex_prefix(false, 0, reg as u8, 0));
         }
         self.buf.push(0xff | (reg as u8 & 0x7));
-        self.buf.push(mod_rm_byte(Base, 0x6, reg as u8));
+        self.buf.push(mod_rm_byte(NoDisp, 0x6, reg as u8));
         if reg == RegX64::RSP || reg == RegX64::R12 {
             self.buf.push(0x24);
         }
@@ -235,7 +266,7 @@ impl EmitterX64 {
             self.buf.push(rex_prefix(false, 0, reg as u8, 0));
         }
         self.buf.push(0x8f | (reg as u8 & 0x7));
-        self.buf.push(mod_rm_byte(Base, 0, reg as u8));
+        self.buf.push(mod_rm_byte(NoDisp, 0, reg as u8));
         if reg == RegX64::RSP || reg == RegX64::R12 {
             self.buf.push(sib_byte(1, 4, reg as u8));
         }
@@ -247,7 +278,7 @@ impl EmitterX64 {
             self.buf.push(rex_prefix(false, 0, reg as u8, 0));
         }
         self.buf.push(0xff | (reg as u8 & 0x7));
-        self.buf.push(mod_rm_byte(BaseDisp8, 0x6, reg as u8));
+        self.buf.push(mod_rm_byte(Disp8, 0x6, reg as u8));
         if reg == RegX64::RSP || reg == RegX64::R12 {
             self.buf.push(sib_byte(1, 4, reg as u8));
         }
@@ -260,7 +291,7 @@ impl EmitterX64 {
             self.buf.push(rex_prefix(false, 0, reg as u8, 0));
         }
         self.buf.push(0x8f | (reg as u8 & 0x7));
-        self.buf.push(mod_rm_byte(BaseDisp8, 0, reg as u8));
+        self.buf.push(mod_rm_byte(Disp8, 0, reg as u8));
         if reg == RegX64::RSP || reg == RegX64::R12 {
             self.buf.push(sib_byte(1, 4, reg as u8));
         }
