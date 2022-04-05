@@ -13,42 +13,34 @@ pub enum VReg {
     R10 = 10,
     R11 = 11,
     R12 = 12,
-    R13 = 13,
-    R14 = 14,
-    R15 = 15,
-    R16 = 16,
-    R17 = 17,
-    R18 = 18,
-    R19 = 19,
-    R20 = 20,
-    R21 = 21,
-    R22 = 22,
-    R23 = 23,
-    R24 = 24,
-    R25 = 25,
-    R26 = 26,
-    R27 = 27,
-    R28 = 28,
-    R29 = 29,
+    SP = 13,
+    LR = 14,
+    PC = 15,
+}
+
+enum Cond {
+    None,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Operand {
     Reg(VReg),
     Ptr(VReg),
-    Imm(u32),
+    PtrOffset(VReg, i32),
+    Imm(i32),
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Opcode {
-    ADD,
-    MOV,
-    PUSH,
-    POP,
-    RET,
+    MOVi(VReg, i16),
+    MOVr(VReg, VReg),
+    PUSH(VReg),
+    POP(VReg),
 }
 
 pub struct Instr {
     pub opcode: Opcode,
+    // TODO delete
     pub operands: [Option<Operand>; 3],
+    cond: Cond,
 }

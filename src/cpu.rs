@@ -1,5 +1,5 @@
 pub struct VirtualState {
-    pub vregs: [u64; 30],
+    pub vregs: [u64; 16],
     pub mem: Box<[u8]>,
 }
 
@@ -8,7 +8,7 @@ impl VirtualState {
     pub fn new() -> VirtualState {
         let mem_size = 4 * (1 << 20);
         VirtualState {
-            vregs: [0; 30],
+            vregs: [0; 16],
             mem: vec![0; mem_size].into_boxed_slice(),
         }
     }

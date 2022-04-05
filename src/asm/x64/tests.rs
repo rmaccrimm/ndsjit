@@ -14,7 +14,7 @@ fn test_mov_reg64_ptr64() {
         .mov_reg64_ptr64(R9, R12)
         .mov_reg64_ptr64(RAX, R13);
     assert_eq!(
-        code.get_buf(),
+        code.buf,
         vec![
             0x4C, 0x8B, 0x45, 0x00, // mov r8 [rbp]
             0x4C, 0x8B, 0x3E, // mov r15, [rsi]
@@ -37,7 +37,7 @@ fn test_mov_ptr64_reg64() {
         .mov_ptr64_reg64(R12, R15)
         .mov_ptr64_reg64(R13, R13);
     assert_eq!(
-        code.get_buf(),
+        code.buf,
         vec![
             0x48, 0x89, 0x7D, 0x00, // mov [rbp],rdi
             0x48, 0x89, 0x04, 0x24, // mov [rsp],rax
@@ -55,7 +55,7 @@ fn test_mov_reg64_reg64() {
         .mov_reg64_reg64(R9, RSP)
         .mov_reg64_reg64(RCX, R12);
     assert_eq!(
-        code.get_buf(),
+        code.buf,
         vec![
             0x48, 0x89, 0xD3, // mov rbx,rdx
             0x48, 0x89, 0xEA, // mov rdx,rbp
@@ -74,7 +74,7 @@ fn test_mov_reg64_ptr64_sib() {
         .mov_reg64_ptr64_sib(RBX, RDX, RBP, 2)
         .mov_reg64_ptr64_sib(R13, R13, RAX, 1);
     assert_eq!(
-        code.get_buf(),
+        code.buf,
         vec![
             0x4A, 0x8B, 0x04, 0xE4, // mov rax, [rsp + r12*8]
             0x48, 0x8B, 0x64, 0x2D, 0x00, // mov rsp, [rbp + rbp]
@@ -102,7 +102,7 @@ fn test_mov_reg64_ptr64_disp8() {
         .mov_reg64_ptr64_disp8(RCX, R15, 109)
         .mov_reg64_ptr64_disp8(RBX, RAX, 12);
     assert_eq!(
-        code.get_buf(),
+        code.buf,
         vec![
             0x4C, 0x8B, 0x45, 0x7F, // mov r8,[rbp+127]
             0x4C, 0x8B, 0x4C, 0x24, 0x81, // mov r9, [rsp+10]
@@ -123,7 +123,7 @@ fn test_mov_ptr64_reg64_disp8() {
         .mov_ptr64_reg64_disp8(R13, R15, 44)
         .mov_ptr64_reg64_disp8(RDI, RSI, -1);
     assert_eq!(
-        code.get_buf(),
+        code.buf,
         vec![
             0x48, 0x89, 0x45, 0xB2, // mov [rbp-78], rax
             0x48, 0x89, 0x5C, 0x24, 0x0A, // mov [rsp+10], rbx
@@ -145,7 +145,7 @@ fn test_mov_reg64_imm32() {
         .mov_reg64_imm32(R15, 2147483647)
         .mov_reg64_imm32(RSI, -28654);
     assert_eq!(
-        code.get_buf(),
+        code.buf,
         vec![
             0x48, 0xC7, 0xC0, 0xFC, 0x69, 0x07, 0x00, // mov rax, 485884
             0x48, 0xC7, 0xC5, 0x00, 0x00, 0x00, 0x00, // mov rbp, 0
@@ -168,7 +168,7 @@ fn test_mov_ptr64_imm32() {
         .mov_ptr64_imm32(R13, 99)
         .mov_ptr64_imm32(R11, 2);
     assert_eq!(
-        code.get_buf(),
+        code.buf,
         vec![
             0x48, 0xC7, 0x01, 0x9E, 0xFF, 0xFF, 0xFF, // movq [rcx], -98
             0x48, 0xC7, 0x45, 0x00, 0x7F, 0x00, 0x00, 0x00, // movq [rbp], 127
@@ -190,7 +190,7 @@ fn test_mov_ptr64_imm32_disp8() {
         .mov_ptr64_imm32_disp8(R13, 88, 127)
         .mov_ptr64_imm32_disp8(R8, 0, 16);
     assert_eq!(
-        code.get_buf(),
+        code.buf,
         vec![
             0x48, 0xC7, 0x42, 0xF6, 0x9E, 0xFF, 0xFF, 0xFF, // movq [rdx-10], -98
             0x48, 0xC7, 0x45, 0x0C, 0x7F, 0x00, 0x00, 0x00, // movq [rbp+12], 127
@@ -210,7 +210,7 @@ fn test_mov_ptr64_reg64_sib_disp32() {
         .mov_ptr64_reg64_sib_disp32(RSP, 8, R13, 209384, R12)
         .mov_ptr64_reg64_sib_disp32(RDI, 1, R12, -943949, RAX);
     assert_eq!(
-        code.get_buf(),
+        code.buf,
         vec![
             0x48, 0x89, 0x8C, 0x43, 0x80, 0x00, 0x00, 0x00, // mov [rbx+2*rax+128], rcx
             0x48, 0x89, 0xB4, 0xAD, 0x3A, 0xFE, 0xFF, 0xFF, // mov [rbp+4*rbp-454], rsi
@@ -232,7 +232,7 @@ fn test_push_reg64_base() {
         .push_reg64(RSI)
         .push_reg64(RDI);
     assert_eq!(
-        code.get_buf(),
+        code.buf,
         vec![0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57]
     );
 }
@@ -249,7 +249,7 @@ fn test_push_reg64_extended() {
         .push_reg64(R13)
         .push_reg64(R14)
         .push_reg64(R15);
-    assert_eq!(code.get_buf(), vec![
+    assert_eq!(code.buf, vec![
         0x41, 0x50, 
         0x41, 0x51, 
         0x41, 0x52,
@@ -273,7 +273,7 @@ fn test_push_reg64_extended() {
             .push_ptr64(RBP)
             .push_ptr64(RSI)
             .push_ptr64(RDI);
-        assert_eq!(code.get_buf(), vec![
+        assert_eq!(code.buf, vec![
             0xff, 0x30, 
             0xff, 0x31, 
             0xff, 0x32, 
@@ -297,7 +297,7 @@ fn test_push_ptr64_extended() {
         .push_ptr64(R13)
         .push_ptr64(R14)
         .push_ptr64(R15);
-    assert_eq!(code.get_buf(), vec![
+    assert_eq!(code.buf, vec![
         0x41, 0xff, 0x30, 
         0x41, 0xff, 0x31, 
         0x41, 0xff, 0x32, 
@@ -319,7 +319,7 @@ fn test_push_ptr64_disp8() {
         .push_ptr64_disp8(R13, 109)
         .push_ptr64_disp8(R15, 2);
     assert_eq!(
-        code.get_buf(),
+        code.buf,
         vec![
             0xFF, 0x70, 0xD9, // push [rax-39]
             0xFF, 0x75, 0x58, // push [rbp+88]
@@ -343,7 +343,7 @@ fn test_pop_reg64_base() {
     code.pop_reg64(RSI);
     code.pop_reg64(RDI);
     assert_eq!(
-        code.get_buf(),
+        code.buf,
         vec![0x58, 0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e, 0x5f]
     );
 }
@@ -360,7 +360,7 @@ fn test_pop_reg64_extended() {
     code.pop_reg64(R13);
     code.pop_reg64(R14);
     code.pop_reg64(R15);
-    assert_eq!(code.get_buf(), vec![
+    assert_eq!(code.buf, vec![
         0x41, 0x58, 
         0x41, 0x59, 
         0x41, 0x5a,
@@ -384,7 +384,7 @@ fn test_pop_ptr64_base() {
     code.pop_ptr64(RBP);
     code.pop_ptr64(RSI);
     code.pop_ptr64(RDI);
-    assert_eq!(code.get_buf(), vec![
+    assert_eq!(code.buf, vec![
         0x8f, 0x00, 
         0x8f, 0x01, 
         0x8f, 0x02, 
@@ -408,7 +408,7 @@ fn test_pop_ptr64_extended() {
     code.pop_ptr64(R13);
     code.pop_ptr64(R14);
     code.pop_ptr64(R15);
-    assert_eq!(code.get_buf(), vec![
+    assert_eq!(code.buf, vec![
         0x41, 0x8f, 0x00, 
         0x41, 0x8f, 0x01, 
         0x41, 0x8f, 0x02, 
@@ -430,7 +430,7 @@ fn test_pop_ptr64_disp8() {
     code.pop_ptr64_disp8(R13, 109);
     code.pop_ptr64_disp8(R8, 2);
     assert_eq!(
-        code.get_buf(),
+        code.buf,
         vec![
             0x8F, 0x42, 0xD9, // pop [rdx-39]
             0x8F, 0x45, 0x58, // pop [rbp+88]
@@ -438,6 +438,19 @@ fn test_pop_ptr64_disp8() {
             0x41, 0x8F, 0x44, 0x24, 0xF3, // pop [r12-13]
             0x41, 0x8F, 0x45, 0x6D, // pop [r13+109]
             0x41, 0x8F, 0x40, 0x02, // pop [r8+2]
+        ]
+    );
+}
+
+#[test]
+fn test_sub_reg64_imm32() {
+    let mut code = EmitterX64::new();
+    code.sub_reg64_imm32(RBP, -329).sub_reg64_imm32(RSP, 999);
+    assert_eq!(
+        code.buf,
+        vec![
+            0x48, 0x81, 0xED, 0xB7, 0xFE, 0xFF, 0xFF, // sub rbp, -329
+            0x48, 0x81, 0xEC, 0xE7, 0x03, 0x00, 0x00, // sub rsp, 999
         ]
     );
 }

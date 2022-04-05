@@ -57,16 +57,12 @@ fn sib_byte(scale: u8, index: u8, base: u8) -> u8 {
 
 /// Stores a vec of encoded x86_64 instructons
 pub struct EmitterX64 {
-    buf: Vec<u8>,
+    pub buf: Vec<u8>,
 }
 
 impl EmitterX64 {
     pub fn new() -> EmitterX64 {
         EmitterX64 { buf: Vec::new() }
-    }
-
-    pub fn get_buf(self) -> Vec<u8> {
-        self.buf
     }
 
     pub fn add_rax_imm32(&mut self, imm: u32) -> &mut Self {
@@ -301,6 +297,16 @@ impl EmitterX64 {
 
     pub fn ret(&mut self) -> &mut Self {
         self.buf.push(0xc3);
+        self
+    }
+
+    pub fn sub_reg64_imm32(&mut self, reg: RegX64, imm: i32) -> &mut Self {
+        self.buf.extend_from_slice(&[
+            rex_prefix(true, 0, reg as u8, 0),
+            0x81,
+            mod_rm_byte(Value, 5, reg as u8),
+        ]);
+        self.buf.extend_from_slice(&imm.to_le_bytes());
         self
     }
 }
