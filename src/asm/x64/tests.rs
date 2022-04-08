@@ -221,6 +221,19 @@ fn test_mov_ptr64_reg64_sib_disp32() {
 }
 
 #[test]
+fn test_mov_reg64_imm64() {
+    let mut code = EmitterX64::new();
+    code.mov_reg64_imm64(RAX, 500000000000);
+    assert_eq!(
+        code.buf,
+        vec![
+            0x48, 0xB8, 0x00, 0x88, 0x52, 0x6A, 0x74, 0x00, 0x00,
+            0x00 // mov rax, 500000000000
+        ]
+    )
+}
+
+#[test]
 fn test_push_reg64_base() {
     let mut code = EmitterX64::new();
     code.push_reg64(RAX)

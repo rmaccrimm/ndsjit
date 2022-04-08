@@ -75,6 +75,11 @@ impl EmitterX64 {
         self
     }
 
+    pub fn call_reg64(&mut self, reg: RegX64) {
+        self.buf
+            .extend_from_slice(&[0xff, mod_rm_byte(Value, 2, reg as u8)]);
+    }
+
     pub fn mov_reg64_reg64(&mut self, dest: RegX64, src: RegX64) -> &mut Self {
         self.buf.push(rex_prefix(true, src as u8, dest as u8, 0));
         self.buf.push(0x89);
@@ -179,6 +184,13 @@ impl EmitterX64 {
             0xc7,
             mod_rm_byte(Value, 0, dest as u8),
         ]);
+        self.buf.extend_from_slice(&imm.to_le_bytes());
+        self
+    }
+
+    pub fn mov_reg64_imm64(&mut self, dest: RegX64, imm: u64) -> &mut Self {
+        self.buf
+            .extend_from_slice(&[rex_prefix(true, dest as u8, 0, 0), 0xb8]);
         self.buf.extend_from_slice(&imm.to_le_bytes());
         self
     }

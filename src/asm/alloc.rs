@@ -1,9 +1,4 @@
-use super::{
-    Instr, Operand,
-    Operand::{Ptr, Reg},
-    RegX64, VReg,
-};
-use crate::ir::Opcode;
+use super::{Instr, Operand::Reg, RegX64, VReg};
 
 use std::vec::Vec;
 

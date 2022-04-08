@@ -1,13 +1,13 @@
-pub struct VirtualState {
+pub struct ARM7 {
     pub vregs: [u64; 16],
     pub mem: Box<[u8]>,
 }
 
-impl VirtualState {
+impl ARM7 {
     // Construct emulated cpu state with all registers and memory set to 0
-    pub fn new() -> VirtualState {
+    pub fn new() -> ARM7 {
         let mem_size = 4 * (1 << 20);
-        VirtualState {
+        ARM7 {
             vregs: [0; 16],
             mem: vec![0; mem_size].into_boxed_slice(),
         }
@@ -31,7 +31,7 @@ mod tests {
 
     #[test]
     fn test_raw_vreg_access_1() {
-        let mut st = VirtualState::new();
+        let mut st = ARM7::new();
         unsafe {
             // mem[0]
             *st.vreg_base_ptr().offset(0) = 0x19;
@@ -48,10 +48,10 @@ mod tests {
     }
     #[test]
     fn test_raw_vreg_access_2() {
-        let mut st = VirtualState::new();
+        let mut st = ARM7::new();
         unsafe {
             // mem[0]
-            let base: isize = 29 * mem::size_of::<u64>() as isize;
+            let base: isize = 15 * mem::size_of::<u64>() as isize;
             *st.vreg_base_ptr().offset(base + 0) = 0x22;
             *st.vreg_base_ptr().offset(base + 1) = 0xc0;
             *st.vreg_base_ptr().offset(base + 2) = 0x31;
@@ -61,12 +61,12 @@ mod tests {
             *st.vreg_base_ptr().offset(base + 6) = 0x01;
             *st.vreg_base_ptr().offset(base + 7) = 0xf0;
             // Assume system is little-endian
-            assert_eq!(st.vregs[29], 0xf001664f9a31c022);
+            assert_eq!(st.vregs[15], 0xf001664f9a31c022);
         }
     }
     #[test]
     fn test_raw_mem_access_1() {
-        let mut st = VirtualState::new();
+        let mut st = ARM7::new();
         unsafe {
             *st.mem_base_ptr().offset(97) = 231;
             assert_eq!(st.mem[97], 231);
@@ -74,7 +74,7 @@ mod tests {
     }
     #[test]
     fn test_raw_mem_access_2() {
-        let mut st = VirtualState::new();
+        let mut st = ARM7::new();
         unsafe {
             *st.mem_base_ptr().offset(0) = 12;
             assert_eq!(st.mem[0], 12);

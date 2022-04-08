@@ -20,6 +20,14 @@ const REG_SIZE: i8 = mem::size_of::<u64>() as i8;
 // Stack contains prev stack pointer, followed by spilled registers
 const SPILL_START: i8 = -1 * mem::size_of::<u64>() as i8;
 
+// #[no_mangle]
+extern "C" fn hello_world(x: *mut u64) {
+    unsafe {
+        *x += 33;
+    }
+    println!("Hello World!")
+}
+
 /*
 Planned use - these methods won't be called directly to setup machine code, but instead the
 emit/translate/assemble (tbd) function will be passed IR instructions to encode, and then the
@@ -59,13 +67,15 @@ impl AssemblerX64 {
     // pointer in %rcx) and set up the stack. If we have to spill to memory, I guess that will make
     // use of the (physical) stack?
     pub fn gen_prologue(&mut self) -> &mut Self {
+        let mut stack_size = self.reg_alloc.num_spilled as i32 * mem::size_of::<u64>() as i32;
+        if stack_size % 16 == 0 {
+            // Ensures 16-byte stack allignment after call instructions (pushes 8 byte ret addr)
+            stack_size += 8;
+        }
         self.code
             .push_reg64(RBP)
             .mov_reg64_reg64(RBP, RSP)
-            .sub_reg64_imm32(
-                RSP,
-                self.reg_alloc.num_spilled as i32 * mem::size_of::<u64>() as i32,
-            );
+            .sub_reg64_imm32(RSP, stack_size);
         for (i, mapping) in self.reg_alloc.mapping.iter().enumerate() {
             let vreg_disp = (mem::size_of::<u64>() * i) as i8;
             match mapping {
@@ -108,13 +118,21 @@ impl AssemblerX64 {
         self
     }
 
+    pub fn call_rcx(&mut self) -> &mut Self {
+        dbg!(hello_world as *const ());
+        dbg!((hello_world as *const ()) as u64);
+        dbg!(hello_world as u64);
+        self.code.mov_reg64_imm64(RAX, hello_world as u64);
+        self.code.call_reg64(RAX);
+        self
+    }
+
     pub fn emit(&mut self, instr: Instr) {
         match instr.opcode {
             MOVr(dest, src) => self.mov_reg(dest, src),
             MOVi(dest, imm) => self.mov_imm(dest, imm),
             PUSH(reg) => panic!(),
             POP(reg) => panic!(),
-            _ => panic!(),
         };
     }
 
@@ -162,7 +180,7 @@ impl AssemblerX64 {
 
     pub fn ldr() {}
 
-    fn ret(&mut self) -> &mut Self {
+    pub fn ret(&mut self) -> &mut Self {
         self.code.ret();
         self
     }
