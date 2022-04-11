@@ -1,15 +1,27 @@
+use std::ptr;
+
 pub struct ARM7 {
     pub vregs: [u64; 16],
     pub mem: Box<[u8]>,
 }
 
+const MEM_SIZE: usize = 4 * (1 << 20);
+
+// Callback for JIT compiled code. Eventually needed to handle interrupts, MMIO, etc.
+pub extern "C" fn arm7_mem_write(mem: *mut u8, addr: u64, value: u8) {
+    unsafe {
+        assert!(mem != ptr::null_mut());
+        assert!((addr as usize) < MEM_SIZE);
+        *mem.offset(addr as isize) = value;
+    }
+}
+
 impl ARM7 {
     // Construct emulated cpu state with all registers and memory set to 0
     pub fn new() -> ARM7 {
-        let mem_size = 4 * (1 << 20);
         ARM7 {
             vregs: [0; 16],
-            mem: vec![0; mem_size].into_boxed_slice(),
+            mem: vec![0; MEM_SIZE].into_boxed_slice(),
         }
     }
 
