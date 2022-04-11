@@ -34,44 +34,26 @@ fn disasm_ldr_str_arm(addr: u32, instr: u32) -> Opcode {
 }
 
 fn disasm_ldr_str_thumb(addr: u32, instr: u32) -> Opcode {
-    if bits(instr, 11..15) == 0b01001 {
-        return ldr_literal_thumb(addr, instr);
-    } else if bits(instr, 13..15) == 0b011 {
-        return match bits(instr, 11..12) {
-            0b00 => str_imm_thumb(instr),
-            0b01 => ldr_imm_thumb(instr),
-            0b10 => strb_imm_thumb(instr),
-            0b11 => ldrb_imm_thumb(instr),
-            _ => panic!(),
-        };
-    } else if bits(instr, 12..15) == 0b1001 {
-        return match bit(instr, 11) {
-            true => ldr_imm_sp_thumb(instr),
-            false => str_imm_sp_thumb(instr),
-        };
-    } else if bits(instr, 12..15) == 0b0101 && !bit(instr, 9) {
-        return match bits(instr, 10..11) {
-            0b00 => str_reg_thumb(instr),
-            0b01 => strb_reg_thumb(instr),
-            0b10 => ldr_reg_thumb(instr),
-            0b11 => ldrb_reg_thumb(instr),
-            _ => panic!(),
-        };
-    } else if bits(instr, 12..15) == 0b1000 {
-        return match bit(instr, 11) {
-            true => ldrh_imm_thumb(instr),
-            false => strh_imm_thumb(instr),
-        };
-    } else if bits(instr, 12..15) == 0b0101 && bit(instr, 9) {
-        return match bits(instr, 10..11) {
-            0b00 => strh_reg_thumb(instr),
-            0b01 => ldrsb_reg_thumb(instr),
-            0b10 => ldrh_reg_thumb(instr),
-            0b11 => ldrsh_reg_thumb(instr),
-            _ => panic!(),
-        };
+    match bits(instr, 9..15) {
+        0b0100100 | 0b0100101 | 0b0100110 | 0b0100111 => ldr_literal_thumb(addr, instr),
+        0b0110000 | 0b0110001 | 0b0110010 | 0b0110011 => str_imm_thumb(instr),
+        0b0110100 | 0b0110101 | 0b0110110 | 0b0110111 => ldr_imm_thumb(instr),
+        0b0111000 | 0b0111001 | 0b0111010 | 0b0111011 => strb_imm_thumb(instr),
+        0b0111100 | 0b0111101 | 0b0111110 | 0b0111111 => ldrb_imm_thumb(instr),
+        0b1001000 | 0b1001001 | 0b1001010 | 0b1001011 => str_imm_sp_thumb(instr),
+        0b1001100 | 0b1001101 | 0b1001110 | 0b1001111 => ldr_imm_sp_thumb(instr),
+        0b0101000 => str_reg_thumb(instr),
+        0b0101010 => strb_reg_thumb(instr),
+        0b0101100 => ldr_reg_thumb(instr),
+        0b0101110 => ldrb_reg_thumb(instr),
+        0b1000000 | 0b1000001 | 0b1000010 | 0b1000011 => strh_imm_thumb(instr),
+        0b1000100 | 0b1000101 | 0b1000110 | 0b1000111 => ldrh_imm_thumb(instr),
+        0b0101001 => strh_reg_thumb(instr),
+        0b0101011 => ldrsb_reg_thumb(instr),
+        0b0101101 => ldrh_reg_thumb(instr),
+        0b0101111 => ldrsh_reg_thumb(instr),
+        _ => panic!("Unknown instruction"),
     }
-    panic!();
 }
 
 #[cfg(test)]
