@@ -1,4 +1,6 @@
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+use std::convert::TryFrom;
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum VReg {
     R0 = 0,
     R1 = 1,
@@ -17,46 +19,59 @@ pub enum VReg {
     LR = 14,
     PC = 15,
 }
+use VReg::*;
+
+impl TryFrom<u32> for VReg {
+    type Error = ();
+    fn try_from(r: u32) -> Result<Self, Self::Error> {
+        let regs = [
+            R0, R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11, R12, SP, LR, PC,
+        ];
+        if r > 15 {
+            Err(())
+        } else {
+            Ok(regs[r as usize])
+        }
+    }
+}
 
 enum Cond {
     None,
 }
 
-#[derive(Copy, Clone, Debug)]
-pub enum IntType {
-    Byte,
-    HalfWord,
-    Word,
-    DoubleWord,
-}
-
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Offset {
-    Immediate(u16),
+    Immediate(u32), // size?
     Index(VReg),
     ShiftIndex(VReg, u16),
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum WriteBack {
-    None,
     Pre,
     Post,
 }
 
-#[derive(Copy, Clone, Debug)]
-pub struct Address {
-    base: VReg,
-    offset: Option<Offset>,
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum Address {
+    Relative(VReg, Offset),
+    Absolute(u32),
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Opcode {
     MOVi(VReg, i16),
     MOVr(VReg, VReg),
     PUSH(VReg),
     POP(VReg),
-    STR(VReg, Address, WriteBack),
+    STR(Address, VReg, Option<WriteBack>),
+    LDR(VReg, Address, Option<WriteBack>),
+    STRB(Address, VReg, Option<WriteBack>),
+    LDRB(VReg, Address, Option<WriteBack>),
+    STRH(Address, VReg, Option<WriteBack>),
+    LDRH(VReg, Address, Option<WriteBack>),
+    LDRSB(VReg, Address, Option<WriteBack>),
+    LDRSH(VReg, Address, Option<WriteBack>),
 }
 use Opcode::*;
 
