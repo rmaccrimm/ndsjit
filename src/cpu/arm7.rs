@@ -1,24 +1,19 @@
 use std::ptr;
 
 pub struct ARM7 {
+    // TODO - these should be 32 bit
     pub vregs: [u64; 16],
     pub mem: Box<[u8]>,
 }
 
-const MEM_SIZE: usize = 4 * (1 << 20);
-
-// Callback for JIT compiled code. Eventually needed to handle interrupts, MMIO, etc.
-pub extern "C" fn arm7_mem_write(mem: *mut u8, addr: u64, value: u8) {
-    unsafe {
-        assert!(mem != ptr::null_mut());
-        assert!((addr as usize) < MEM_SIZE);
-        *mem.offset(addr as isize) = value;
-    }
-}
+/// 225 Mb - includes max space a cartridge can take up
+const MEM_SIZE: usize = 0xe100000;
 
 impl ARM7 {
-    // Construct emulated cpu state with all registers and memory set to 0
+    /// Construct emulated cpu state with all registers and memory set to 0
     pub fn new() -> ARM7 {
+        // TODO - a lot of the address space is unused by the GBA. Creating an array covering the
+        // the full space is wasteful, but simplifies direct reads. Might try reducing later
         ARM7 {
             vregs: [0; 16],
             mem: vec![0; MEM_SIZE].into_boxed_slice(),
@@ -35,6 +30,36 @@ impl ARM7 {
         (*self.mem).as_mut_ptr() as *mut u8
     }
 }
+
+// // Callbacks for JIT compiled code. Eventually needed to handle interrupts, MMIO, etc.
+
+// pub extern "C" fn mem_write(cpu: *mut ARM7, addr: u32, value: u32) {
+//     unsafe {
+//         assert!(cpu != ptr::null_mut());
+//         assert!((addr as usize) < MEM_SIZE);
+//         for b in value.to_le_bytes() {
+//             (*cpu).mem[addr as usize] = b;
+//         }
+//     }
+// }
+
+// pub extern "C" fn mem_writeh(cpu: *mut ARM7, addr: u32, value: u16) {
+//     unsafe {
+//         assert!(cpu != ptr::null_mut());
+//         assert!((addr as usize) < MEM_SIZE);
+//         for b in value.to_le_bytes() {
+//             (*cpu).mem[addr as usize] = b;
+//         }
+//     }
+// }
+
+// pub extern "C" fn mem_writeb(cpu: *mut ARM7, addr: u32, value: u8) {
+//     unsafe {
+//         assert!(cpu != ptr::null_mut());
+//         assert!((addr as usize) < MEM_SIZE);
+//         (*cpu).mem[addr as usize] = value;
+//     }
+// }
 
 #[cfg(test)]
 mod tests {
