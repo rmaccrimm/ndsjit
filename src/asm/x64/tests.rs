@@ -115,6 +115,42 @@ fn test_mov_reg64_ptr64_disp8() {
 }
 
 #[test]
+fn test_mov_reg64_ptr64_disp32() {
+    let mut code = EmitterX64::new();
+    code.mov_reg64_ptr64_disp32(RBX, RSP, 16000)
+        .mov_reg64_ptr64_disp32(RSP, RBP, 453)
+        .mov_reg64_ptr64_disp32(R14, R12, -883)
+        .mov_reg64_ptr64_disp32(RSI, R13, -10000);
+    assert_eq!(
+        code.buf,
+        vec![
+            0x48, 0x8B, 0x9C, 0x24, 0x80, 0x3E, 0x00, 0x00, // mov rbx, [rsp+16000]
+            0x48, 0x8B, 0xA5, 0xC5, 0x01, 0x00, 0x00, // mov rsp, [rbp+453]
+            0x4d, 0x8B, 0xB4, 0x24, 0x8D, 0xFC, 0xFF, 0xFF, // mov r14, [r12-883]
+            0x49, 0x8B, 0xB5, 0xF0, 0xD8, 0xFF, 0xFF, // mov rsi, [r13-10000]
+        ]
+    );
+}
+
+#[test]
+fn test_mov_ptr64_reg64_disp32() {
+    let mut code = EmitterX64::new();
+    code.mov_ptr64_reg64_disp32(RSP, R11, 16000)
+        .mov_ptr64_reg64_disp32(RBP, RAX, 453)
+        .mov_ptr64_reg64_disp32(R12, RDI, -883)
+        .mov_ptr64_reg64_disp32(R13, RCX, -10000);
+    assert_eq!(
+        code.buf,
+        vec![
+            0x4C, 0x89, 0x9C, 0x24, 0x80, 0x3E, 0x00, 0x00, // mov [rsp+16000], r11
+            0x48, 0x89, 0x85, 0xC5, 0x01, 0x00, 0x00, // mov [rbp+453], rax
+            0x49, 0x89, 0xBC, 0x24, 0x8D, 0xFC, 0xFF, 0xFF, // mov [r12-883], rdi
+            0x49, 0x89, 0x8D, 0xF0, 0xD8, 0xFF, 0xFF, // mov [r13-10000], rcx
+        ]
+    );
+}
+
+#[test]
 fn test_mov_ptr64_reg64_disp8() {
     let mut code = EmitterX64::new();
     code.mov_ptr64_reg64_disp8(RBP, RAX, -78)
