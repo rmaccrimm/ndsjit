@@ -1,10 +1,9 @@
 pub mod alloc;
 mod execbuffer;
 mod x64;
-
 use std::mem;
 
-use super::ir::{Instr, Opcode::*, Operand, VReg};
+use super::ir::{Instr, Opcode::*, VReg};
 use alloc::{MappedReg::*, RegAllocation};
 use execbuffer::ExecBuffer;
 use x64::RegX64::*;
@@ -20,14 +19,6 @@ const REG_SIZE: i8 = mem::size_of::<u64>() as i8;
 // Stack contains prev stack pointer, followed by spilled registers
 const SPILL_START: i8 = -1 * mem::size_of::<u64>() as i8;
 
-// #[no_mangle]
-extern "C" fn hello_world(x: *mut u64) {
-    unsafe {
-        *x += 33;
-    }
-    println!("Hello World!")
-}
-
 /*
 Planned use - these methods won't be called directly to setup machine code, but instead the
 emit/translate/assemble (tbd) function will be passed IR instructions to encode, and then the
@@ -42,13 +33,6 @@ impl AssemblerX64 {
         AssemblerX64 {
             code: EmitterX64::new(),
             reg_alloc,
-        }
-    }
-
-    pub fn with_default_alloc() -> AssemblerX64 {
-        AssemblerX64 {
-            code: EmitterX64::new(),
-            reg_alloc: RegAllocation::default(),
         }
     }
 
@@ -76,17 +60,20 @@ impl AssemblerX64 {
             .push_reg64(RBP)
             .mov_reg64_reg64(RBP, RSP)
             .sub_reg64_imm32(RSP, stack_size);
+
         for (i, mapping) in self.reg_alloc.mapping.iter().enumerate() {
-            let vreg_disp = (mem::size_of::<u64>() * i) as i8;
+            let vreg_disp = mem::size_of::<u64>() * i;
+            assert!(vreg_disp < (1 << 7));
+
             match mapping {
                 Phys(r) => {
-                    self.code.mov_reg64_ptr64_disp8(*r, RCX, vreg_disp);
+                    self.code.mov_reg64_ptr64_disp8(*r, RCX, vreg_disp as i8);
                 }
                 Spill(i) => {
                     // Since prev base ptr is first on stack, add 1 to each index
                     let spill_stack_disp = mem::size_of::<u64>() as i8 * -i;
                     self.code
-                        .mov_reg64_ptr64_disp8(RAX, RCX, vreg_disp)
+                        .mov_reg64_ptr64_disp8(RAX, RCX, vreg_disp as i8)
                         .mov_ptr64_reg64_disp8(RBP, RAX, SPILL_START + spill_stack_disp);
                 }
                 Unmapped => (),
@@ -99,17 +86,18 @@ impl AssemblerX64 {
     // maybe should move to stack to free up another register?)
     pub fn gen_epilogue(&mut self) -> &mut Self {
         for (i, mapping) in self.reg_alloc.mapping.iter().enumerate() {
-            let vreg_disp = (mem::size_of::<u64>() * i) as i8;
+            let vreg_disp = mem::size_of::<u64>() * i;
+            assert!(vreg_disp < (1 << 7));
             match mapping {
                 Phys(r) => {
-                    self.code.mov_ptr64_reg64_disp8(RCX, *r, vreg_disp);
+                    self.code.mov_ptr64_reg64_disp8(RCX, *r, vreg_disp as i8);
                 }
                 Spill(i) => {
                     // Since prev base ptr is first on stack, add 1 to each index
                     let spill_stack_disp = mem::size_of::<u64>() as i8 * -i;
                     self.code
                         .mov_reg64_ptr64_disp8(RAX, RBP, SPILL_START + spill_stack_disp)
-                        .mov_ptr64_reg64_disp8(RCX, RAX, vreg_disp);
+                        .mov_ptr64_reg64_disp8(RCX, RAX, vreg_disp as i8);
                 }
                 _ => (),
             }
@@ -118,25 +106,15 @@ impl AssemblerX64 {
         self
     }
 
-    pub fn call_rcx(&mut self) -> &mut Self {
-        dbg!(hello_world as *const ());
-        dbg!((hello_world as *const ()) as u64);
-        dbg!(hello_world as u64);
-        self.code.mov_reg64_imm64(RAX, hello_world as u64);
-        self.code.call_reg64(RAX);
-        self
-    }
-
     pub fn emit(&mut self, instr: Instr) {
         match instr.opcode {
             MOVr(dest, src) => self.mov_reg(dest, src),
             MOVi(dest, imm) => self.mov_imm(dest, imm),
-            PUSH(reg) => panic!(),
-            POP(reg) => panic!(),
+            _ => panic!(),
         };
     }
 
-    pub fn mov_reg(&mut self, dest: VReg, src: VReg) -> &mut Self {
+    fn mov_reg(&mut self, dest: VReg, src: VReg) -> &mut Self {
         match (self.reg_alloc.get(dest), self.reg_alloc.get(src)) {
             (Phys(rd), Phys(rs)) => self.code.mov_reg64_reg64(rd, rs),
             (Phys(rd), Spill(is)) => {
@@ -150,13 +128,13 @@ impl AssemblerX64 {
             (Spill(id), Spill(is)) => self
                 .code
                 .mov_reg64_ptr64_disp8(RAX, RBP, SPILL_START + REG_SIZE * -is)
-                .mov_ptr64_reg64_disp8(RBP, RAX, SPILL_START + REG_SIZE * -is),
+                .mov_ptr64_reg64_disp8(RBP, RAX, SPILL_START + REG_SIZE * -id),
             _ => panic!(),
         };
         self
     }
 
-    pub fn mov_imm(&mut self, dest: VReg, imm: i16) -> &mut Self {
+    fn mov_imm(&mut self, dest: VReg, imm: i16) -> &mut Self {
         match self.reg_alloc.get(dest) {
             Phys(rd) => self.code.mov_reg64_imm32(rd, imm as i32),
             Spill(ri) => {
@@ -168,23 +146,102 @@ impl AssemblerX64 {
         self
     }
 
-    pub fn push(&mut self, reg: VReg) {
-        match self.reg_alloc.get(reg) {
-            Phys(r) => self.code.push_reg64(r),
-            Spill(i) => self.code.push_ptr64_disp8(RBP, SPILL_START + REG_SIZE * -i),
+    /// Load value to register from absolute address
+    fn ldr_abs(&mut self, dest: VReg, addr: u32) -> &mut Self {
+        match self.reg_alloc.get(dest) {
+            // TODO are unsigned to signed offset conversions going to be a problem?
+            Phys(r) => {
+                self.code.mov_reg64_ptr64_disp32(r, RDX, addr as i32);
+            }
+            Spill(i) => {
+                // TODO - assuming here we can't spill past size of i8, i.e. 127 bytes. Should have
+                // a check for that at some point (or stop using i8s)
+                let stack_offset = (SPILL_START + REG_SIZE * -i) as i32;
+                self.code
+                    .mov_reg64_ptr64_disp32(RAX, RCX, addr as i32)
+                    .mov_ptr64_reg64_disp32(RBP, RAX, stack_offset);
+            }
             Unmapped => panic!(),
         };
+        self
     }
 
-    pub fn str() {}
+    /// Load value to register from address in pointer register plus immediate offset
+    fn ldr_rel_imm(&mut self, dest: VReg, ptr: VReg, offset: i64 /* sz? */) -> &mut Self {
+        self
+    }
 
-    pub fn ldr() {}
+    /// Load value to register from address in pointer register plus index register
+    fn ldr_rel_ind(&mut self, dest: VReg, ptr: VReg, ind: VReg) -> &mut Self {
+        self
+    }
 
-    pub fn ret(&mut self) -> &mut Self {
+    fn ret(&mut self) -> &mut Self {
         self.code.ret();
         self
     }
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use super::{AssemblerX64, RegAllocation};
+    use crate::cpu::ARM7;
+    use crate::ir::VReg::*;
+
+    #[test]
+    fn test_mov() {
+        let mut cpu = ARM7::new();
+        let mut asm = AssemblerX64::new(RegAllocation::default());
+        asm.gen_prologue()
+            .mov_imm(R0, 4958) // phys
+            .mov_reg(R6, R0) // phys -> phys
+            .mov_imm(SP, 193) // spill
+            .mov_reg(LR, SP) // spill -> spill
+            .mov_reg(PC, R6) // phys -> spill
+            .mov_reg(R3, PC) // spill -> phys
+            .gen_epilogue();
+        let f = asm.get_exec_buffer();
+        f.call(cpu.vreg_base_ptr(), cpu.mem_base_ptr());
+
+        assert_eq!(cpu.vregs[R0 as usize], 4958);
+        assert_eq!(cpu.vregs[R6 as usize], 4958);
+        assert_eq!(cpu.vregs[SP as usize], 193);
+        assert_eq!(cpu.vregs[LR as usize], 193);
+        assert_eq!(cpu.vregs[PC as usize], 4958);
+        assert_eq!(cpu.vregs[R3 as usize], 4958);
+    }
+
+    #[test]
+    fn test_ldr() {
+        let mut cpu = ARM7::new();
+        cpu.vregs[SP as usize] = 80;
+        cpu.vregs[R8 as usize] = 4;
+        cpu.mem[80] = 0xa3;
+        cpu.mem[81] = 0x03;
+        cpu.mem[82] = 0xf1;
+        cpu.mem[83] = 0x4e;
+        cpu.mem[84] = 0xbb;
+        cpu.mem[85] = 0x73;
+        cpu.mem[86] = 0xda;
+        cpu.mem[87] = 0x09;
+        cpu.mem[96] = 0x6c;
+        cpu.mem[97] = 0x78;
+        cpu.mem[98] = 0xff;
+        cpu.mem[99] = 0x32;
+        let mut asm = AssemblerX64::new(RegAllocation::default());
+        asm.gen_prologue()
+            .ldr_abs(R0, 80)
+            // .ldr_rel_ind(R1, SP, R8)
+            // .ldr_rel_imm(R2, SP, 16)
+            // .ldr_rel_imm(R3, SP, 0)
+            .gen_epilogue();
+        asm.hex_dump();
+        let f = asm.get_exec_buffer();
+        f.call(cpu.vreg_base_ptr(), cpu.mem_base_ptr());
+        dbg!(cpu.vregs);
+        assert_eq!(cpu.vregs[R0 as usize], 0x4ef103a3);
+        // assert_eq!(cpu.vregs[R1 as usize], 0x4ef103a3);
+        // assert_eq!(cpu.vregs[R2 as usize], 0x09da73bb);
+        // assert_eq!(cpu.vregs[R3 as usize], 0x32ff786c);
+    }
+}
