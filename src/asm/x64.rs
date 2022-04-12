@@ -135,6 +135,32 @@ impl EmitterX64 {
         self
     }
 
+    pub fn mov_reg64_ptr64_disp32(&mut self, dest: RegX64, src: RegX64, disp: i32) -> &mut Self {
+        self.buf.extend_from_slice(&[
+            rex_prefix(true, dest as u8, src as u8, 0),
+            0x8b,
+            mod_rm_byte(Disp32, dest as u8, src as u8),
+        ]);
+        if src == RegX64::RSP || src == RegX64::R12 {
+            self.buf.push(sib_byte(1, 4, src as u8))
+        }
+        self.buf.extend_from_slice(&disp.to_le_bytes());
+        self
+    }
+
+    pub fn mov_ptr64_reg64_disp32(&mut self, dest: RegX64, src: RegX64, disp: i32) -> &mut Self {
+        self.buf.extend_from_slice(&[
+            rex_prefix(true, src as u8, dest as u8, 0),
+            0x89,
+            mod_rm_byte(Disp32, src as u8, dest as u8),
+        ]);
+        if dest == RegX64::RSP || dest == RegX64::R12 {
+            self.buf.push(sib_byte(1, 4, dest as u8))
+        }
+        self.buf.extend_from_slice(&disp.to_le_bytes());
+        self
+    }
+
     pub fn mov_reg64_ptr64_sib(
         &mut self,
         dest: RegX64,
