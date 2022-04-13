@@ -97,6 +97,21 @@ impl EmitterX64 {
         EmitterX64 { buf: Vec::new() }
     }
 
+    pub fn add_reg32_reg32(&mut self, dest: RegX64, src: RegX64) -> &mut Self {
+        if dest as u8 > 7 || src as u8 > 7 {
+            self.buf.push(rex_prefix(false, src as u8, dest as u8, 0))
+        }
+        self.buf.push(0x01);
+        self.buf.push(mod_rm_byte(Value, src as u8, dest as u8));
+        self
+    }
+
+    pub fn add_reg32_ptr64_disp8(&mut self, dest: RegX64, src: RegX64, disp: i8) -> &mut Self {
+        self.buf
+            .extend_from_slice(&build_mov_ptr_instr(0x03, dest, src, Disp8, disp as u32));
+        self
+    }
+
     pub fn call_reg64(&mut self, reg: RegX64) -> &mut Self {
         self.buf
             .extend_from_slice(&[0xff, mod_rm_byte(Value, 2, reg as u8)]);
@@ -152,6 +167,27 @@ impl EmitterX64 {
     pub fn mov_ptr64_reg32_disp32(&mut self, dest: RegX64, src: RegX64, disp: i32) -> &mut Self {
         self.buf
             .extend_from_slice(&build_mov_ptr_instr(0x89, src, dest, Disp32, disp as u32)[..]);
+        self
+    }
+
+    pub fn mov_reg32_ptr64_sib(
+        &mut self,
+        dest: RegX64,
+        base: RegX64,
+        scale: u8,
+        ind: RegX64,
+    ) -> &mut Self {
+        self
+    }
+
+    pub fn mov_reg32_ptr64_sib_disp32(
+        &mut self,
+        dest: RegX64,
+        base: RegX64,
+        scale: u8,
+        ind: RegX64,
+        disp: i32,
+    ) -> &mut Self {
         self
     }
 

@@ -2,6 +2,44 @@ use super::RegX64::*;
 use super::*;
 
 #[test]
+fn test_add_reg32_reg32() {
+    let mut code = EmitterX64::new();
+    code.add_reg32_reg32(RBX, RBP)
+        .add_reg32_reg32(RAX, R15)
+        .add_reg32_reg32(R11, RSI)
+        .add_reg32_reg32(R8, R9);
+    assert_eq!(
+        code.buf,
+        vec![
+            0x01, 0xEB, // add ebx, ebp
+            0x44, 0x01, 0xF8, // add eax, r15d
+            0x41, 0x01, 0xF3, // add r11d, esi
+            0x45, 0x01, 0xC8, // add r8d, r9d
+        ]
+    );
+}
+
+#[test]
+fn test_add_reg32_ptr64_disp8() {
+    let mut code = EmitterX64::new();
+    code.add_reg32_ptr64_disp8(RBX, RBP, 12)
+        .add_reg32_ptr64_disp8(RAX, R12, -128)
+        .add_reg32_ptr64_disp8(R11, RSP, 90)
+        .add_reg32_ptr64_disp8(R8, R13, 127)
+        .add_reg32_ptr64_disp8(RDX, RCX, 70);
+    assert_eq!(
+        code.buf,
+        vec![
+            0x03, 0x5D, 0x0C, // add ebx, [rbp+12]
+            0x41, 0x03, 0x44, 0x24, 0x80, // add eax, [r12-128]
+            0x44, 0x03, 0x5C, 0x24, 0x5A, // add r11d, [rsp+90]
+            0x45, 0x03, 0x45, 0x7F, // add r8d,[r13+127]
+            0x03, 0x51, 0x46, // add edx, [rcx+70]
+        ]
+    );
+}
+
+#[test]
 fn test_mov_reg32_reg32() {
     let mut code = EmitterX64::new();
     code.mov_reg32_reg32(RAX, R15)

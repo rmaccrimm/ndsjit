@@ -7,7 +7,7 @@ pub enum MappedReg {
     /// Mapped to a physical register
     Phys(RegX64),
     /// Spilled onto stack with index
-    Spill(i8),
+    Spill(usize),
     /// Not mapped
     Unmapped,
 }

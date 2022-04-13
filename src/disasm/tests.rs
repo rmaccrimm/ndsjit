@@ -117,3 +117,5 @@ fn ldrsh_reg_thumb() {
 fn test_disasm_str_imm_thumb() {
     // 08028e92 08 87           strh       r0,[r1,#0x38]
 }
+
+fn test_disasm_str_reg_thumb() {}
