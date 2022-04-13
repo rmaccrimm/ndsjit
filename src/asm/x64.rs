@@ -60,24 +60,47 @@ pub struct EmitterX64 {
     pub buf: Vec<u8>,
 }
 
+fn build_mov_ptr_instr(
+    opcode: u8,
+    reg: RegX64,
+    ptr_reg: RegX64,
+    disp_mode: DispMode,
+    disp: u32,
+) -> Vec<u8> {
+    let mut bytes: Vec<u8> = Vec::with_capacity(8);
+    let mut mode = disp_mode;
+
+    if reg as u8 > 7 || ptr_reg as u8 > 7 {
+        bytes.push(rex_prefix(false, reg as u8, ptr_reg as u8, 0))
+    }
+    bytes.push(opcode);
+    if ptr_reg == RegX64::RBP || ptr_reg == RegX64::R13 {
+        if let NoDisp = disp_mode {
+            mode = Disp8
+        }
+    }
+    bytes.push(mod_rm_byte(mode, reg as u8, ptr_reg as u8));
+    if ptr_reg == RegX64::RSP || ptr_reg == RegX64::R12 {
+        // sib_byte(1, 4, ptr_reg as u8)
+        bytes.push(0x24);
+    }
+    match mode {
+        NoDisp | Value => (),
+        Disp8 => bytes.push(disp as u8),
+        Disp32 => bytes.extend_from_slice(&disp.to_le_bytes()),
+    };
+    bytes
+}
+
 impl EmitterX64 {
     pub fn new() -> EmitterX64 {
         EmitterX64 { buf: Vec::new() }
     }
 
-    pub fn add_rax_imm32(&mut self, imm: u32) -> &mut Self {
-        self.buf.push(0x48);
-        self.buf.push(0x05);
-        self.buf.push((imm & 0xff) as u8);
-        self.buf.push(((imm >> 8) & 0xff) as u8);
-        self.buf.push(((imm >> 16) & 0xff) as u8);
-        self.buf.push(((imm >> 24) & 0xff) as u8);
-        self
-    }
-
-    pub fn call_reg64(&mut self, reg: RegX64) {
+    pub fn call_reg64(&mut self, reg: RegX64) -> &mut Self {
         self.buf
             .extend_from_slice(&[0xff, mod_rm_byte(Value, 2, reg as u8)]);
+        self
     }
 
     pub fn mov_reg64_reg64(&mut self, dest: RegX64, src: RegX64) -> &mut Self {
@@ -87,120 +110,48 @@ impl EmitterX64 {
         self
     }
 
-    pub fn mov_reg64_ptr64(&mut self, dest: RegX64, src: RegX64) -> &mut Self {
-        if src == RegX64::RBP || src == RegX64::R13 {
-            return self.mov_reg64_ptr64_disp8(dest, src, 0);
+    pub fn mov_reg32_reg32(&mut self, dest: RegX64, src: RegX64) -> &mut Self {
+        if src as u8 > 7 || dest as u8 > 7 {
+            self.buf.push(rex_prefix(false, src as u8, dest as u8, 0))
         }
-        self.buf.push(rex_prefix(true, dest as u8, src as u8, 0));
-        self.buf.push(0x8b);
-        self.buf.push(mod_rm_byte(NoDisp, dest as u8, src as u8));
-        if src == RegX64::RSP || src == RegX64::R12 {
-            self.buf.push(sib_byte(1, 4, src as u8))
-        }
-        self
-    }
-
-    pub fn mov_ptr64_reg64(&mut self, dest: RegX64, src: RegX64) -> &mut Self {
-        if dest == RegX64::RBP || dest == RegX64::R13 {
-            return self.mov_ptr64_reg64_disp8(dest, src, 0);
-        }
-        self.buf.push(rex_prefix(true, src as u8, dest as u8, 0));
         self.buf.push(0x89);
-        self.buf.push(mod_rm_byte(NoDisp, src as u8, dest as u8));
-        if dest == RegX64::RSP || dest == RegX64::R12 {
-            self.buf.push(0x24)
-        }
+        self.buf.push(mod_rm_byte(Value, src as u8, dest as u8));
         self
     }
 
-    pub fn mov_reg64_ptr64_disp8(&mut self, dest: RegX64, src: RegX64, disp: i8) -> &mut Self {
-        self.buf.push(rex_prefix(true, dest as u8, src as u8, 0));
-        self.buf.push(0x8b);
-        self.buf.push(mod_rm_byte(Disp8, dest as u8, src as u8));
-        if src == RegX64::RSP || src == RegX64::R12 {
-            self.buf.push(sib_byte(1, 4, src as u8))
-        }
-        self.buf.push(disp as u8);
-        self
-    }
-
-    pub fn mov_ptr64_reg64_disp8(&mut self, dest: RegX64, src: RegX64, disp: i8) -> &mut Self {
-        self.buf.push(rex_prefix(true, src as u8, dest as u8, 0));
-        self.buf.push(0x89);
-        self.buf.push(mod_rm_byte(Disp8, src as u8, dest as u8));
-        if dest == RegX64::RSP || dest == RegX64::R12 {
-            self.buf.push(sib_byte(1, 4, dest as u8))
-        }
-        self.buf.push(disp as u8);
-        self
-    }
-
-    pub fn mov_reg64_ptr64_disp32(&mut self, dest: RegX64, src: RegX64, disp: i32) -> &mut Self {
-        self.buf.extend_from_slice(&[
-            rex_prefix(true, dest as u8, src as u8, 0),
-            0x8b,
-            mod_rm_byte(Disp32, dest as u8, src as u8),
-        ]);
-        if src == RegX64::RSP || src == RegX64::R12 {
-            self.buf.push(sib_byte(1, 4, src as u8))
-        }
-        self.buf.extend_from_slice(&disp.to_le_bytes());
-        self
-    }
-
-    pub fn mov_ptr64_reg64_disp32(&mut self, dest: RegX64, src: RegX64, disp: i32) -> &mut Self {
-        self.buf.extend_from_slice(&[
-            rex_prefix(true, src as u8, dest as u8, 0),
-            0x89,
-            mod_rm_byte(Disp32, src as u8, dest as u8),
-        ]);
-        if dest == RegX64::RSP || dest == RegX64::R12 {
-            self.buf.push(sib_byte(1, 4, dest as u8))
-        }
-        self.buf.extend_from_slice(&disp.to_le_bytes());
-        self
-    }
-
-    pub fn mov_reg64_ptr64_sib(
-        &mut self,
-        dest: RegX64,
-        base: RegX64,
-        index: RegX64,
-        scale: u8,
-    ) -> &mut Self {
-        assert!(index != RegX64::RSP);
-        let mode = match base {
-            RegX64::RBP | RegX64::R13 => Disp8,
-            _ => NoDisp,
-        };
+    pub fn mov_reg32_ptr64(&mut self, dest: RegX64, src: RegX64) -> &mut Self {
         self.buf
-            .push(rex_prefix(true, dest as u8, base as u8, index as u8));
-        self.buf.push(0x8b);
-        self.buf.push(mod_rm_byte(mode, dest as u8, SIB_RM));
-        self.buf.push(sib_byte(scale, index as u8, base as u8));
-        if let Disp8 = mode {
-            self.buf.push(0);
-        }
+            .extend_from_slice(&build_mov_ptr_instr(0x8b, dest, src, NoDisp, 0)[..]);
         self
     }
 
-    /// mov [base + scale * index + disp32], src
-    pub fn mov_ptr64_reg64_sib_disp32(
-        &mut self,
-        base: RegX64,
-        scale: u8,
-        index: RegX64,
-        disp: i32,
-        src: RegX64,
-    ) -> &mut Self {
-        assert!(index != RegX64::RSP);
-        self.buf.extend_from_slice(&[
-            rex_prefix(true, src as u8, base as u8, index as u8),
-            0x89,
-            mod_rm_byte(Disp32, src as u8, SIB_RM),
-            sib_byte(scale, index as u8, base as u8),
-        ]);
-        self.buf.extend_from_slice(&disp.to_le_bytes());
+    pub fn mov_ptr64_reg32(&mut self, dest: RegX64, src: RegX64) -> &mut Self {
+        self.buf
+            .extend_from_slice(&build_mov_ptr_instr(0x89, src, dest, NoDisp, 0));
+        self
+    }
+
+    pub fn mov_reg32_ptr64_disp8(&mut self, dest: RegX64, src: RegX64, disp: i8) -> &mut Self {
+        self.buf
+            .extend_from_slice(&build_mov_ptr_instr(0x8b, dest, src, Disp8, disp as u32)[..]);
+        self
+    }
+
+    pub fn mov_ptr64_reg32_disp8(&mut self, dest: RegX64, src: RegX64, disp: i8) -> &mut Self {
+        self.buf
+            .extend_from_slice(&build_mov_ptr_instr(0x89, src, dest, Disp8, disp as u32)[..]);
+        self
+    }
+
+    pub fn mov_reg32_ptr64_disp32(&mut self, dest: RegX64, src: RegX64, disp: i32) -> &mut Self {
+        self.buf
+            .extend_from_slice(&build_mov_ptr_instr(0x8b, dest, src, Disp32, disp as u32)[..]);
+        self
+    }
+
+    pub fn mov_ptr64_reg32_disp32(&mut self, dest: RegX64, src: RegX64, disp: i32) -> &mut Self {
+        self.buf
+            .extend_from_slice(&build_mov_ptr_instr(0x89, src, dest, Disp32, disp as u32)[..]);
         self
     }
 
@@ -214,7 +165,7 @@ impl EmitterX64 {
         self
     }
 
-    pub fn mov_reg64_imm64(&mut self, dest: RegX64, imm: u64) -> &mut Self {
+    pub fn mov_reg64_imm64(&mut self, dest: RegX64, imm: i64) -> &mut Self {
         self.buf
             .extend_from_slice(&[rex_prefix(true, dest as u8, 0, 0), 0xb8]);
         self.buf.extend_from_slice(&imm.to_le_bytes());
@@ -259,6 +210,16 @@ impl EmitterX64 {
         }
         self
     }
+
+    pub fn ret(&mut self) -> &mut Self {
+        self.buf.push(0xc3);
+        self
+    }
+
+    /*
+        Stack operations only used for the host stack (register saving, spilling,  etc.) so they
+        use 64-bit register operands
+    */
 
     pub fn push_reg64(&mut self, reg: RegX64) -> &mut Self {
         if (reg as u8) >= 8 {
@@ -330,11 +291,6 @@ impl EmitterX64 {
             self.buf.push(sib_byte(1, 4, reg as u8));
         }
         self.buf.push(disp as u8);
-        self
-    }
-
-    pub fn ret(&mut self) -> &mut Self {
-        self.buf.push(0xc3);
         self
     }
 
