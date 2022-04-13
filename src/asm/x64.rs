@@ -56,62 +56,6 @@ fn sib_byte(scale: u8, index: u8, base: u8) -> u8 {
     scale << 6 | (index & 0x7) << 3 | (base & 0x7)
 }
 
-/// Build instruction with 32-bit register operand and second 32-bit register or 64-bit pointer
-/// operand
-fn instr_builder(
-    opcode: u8,
-    reg: RegX64,
-    ptr_reg: RegX64,
-    index: Option<(RegX64, u8)>,
-    disp_mode: DispMode,
-    disp: u32,
-) -> Vec<u8> {
-    let mut bytes: Vec<u8> = Vec::with_capacity(8);
-    let mut disp_mode = disp_mode;
-    // Using RAX here because it's value is 0, which also indicates no index
-    let (ind, _) = index.unwrap_or((RegX64::RAX, 0));
-
-    if reg as u8 > 7 || ptr_reg as u8 > 7 || ind as u8 > 7 {
-        bytes.push(rex_prefix(false, reg as u8, ptr_reg as u8, ind as u8))
-    }
-    bytes.push(opcode);
-    match disp_mode {
-        Value => bytes.push(mod_rm_byte(disp_mode, reg as u8, ptr_reg as u8)),
-        _ => {
-            if ptr_reg == RegX64::RBP || ptr_reg == RegX64::R13 {
-                // For ptr operand with no displacement, RM = 101b is used to indicate pc-relative
-                // 32-bit offset, so encode as a 0 8bit displacement instead
-                if let NoDisp = disp_mode {
-                    disp_mode = Disp8;
-                }
-            }
-            match index {
-                Some((ind_reg, scale)) => {
-                    // Indicates no index, so cannot be used as an index
-                    assert!(ind_reg != RegX64::RSP);
-                    bytes.push(mod_rm_byte(disp_mode, reg as u8, SIB_RM));
-                    bytes.push(sib_byte(scale, ind_reg as u8, ptr_reg as u8));
-                }
-                None => {
-                    bytes.push(mod_rm_byte(disp_mode, reg as u8, ptr_reg as u8));
-                    if ptr_reg == RegX64::RSP || ptr_reg == RegX64::R12 {
-                        // R/M = 100b is used to indicate SIB addressing mode, so if one of these
-                        // is needed as the ptr reg, encode with no index, and ptr_reg as base
-                        // (sib = 0x24)
-                        bytes.push(sib_byte(1, SIB_RM, ptr_reg as u8));
-                    }
-                }
-            }
-        }
-    }
-    match disp_mode {
-        NoDisp | Value => (),
-        Disp8 => bytes.push(disp as u8),
-        Disp32 => bytes.extend_from_slice(&disp.to_le_bytes()),
-    };
-    bytes
-}
-
 /// Stores a vec of encoded x86_64 instructons
 pub struct EmitterX64 {
     pub buf: Vec<u8>,
@@ -122,18 +66,74 @@ impl EmitterX64 {
         EmitterX64 { buf: Vec::new() }
     }
 
+    /// Handles logic shared my most instructions
+    fn build_instr(
+        &mut self,
+        is64bit: bool,
+        opcode: u8,
+        reg: RegX64,
+        ptr_reg: RegX64,
+        index: Option<(RegX64, u8)>,
+        disp_mode: DispMode,
+        disp: u32,
+    ) -> &mut Self {
+        let mut disp_mode = disp_mode;
+        // Using RAX here because it's value is 0, which also indicates no index
+        let (ind, _) = index.unwrap_or((RegX64::RAX, 0));
+
+        if is64bit || reg as u8 > 7 || ptr_reg as u8 > 7 || ind as u8 > 7 {
+            self.buf
+                .push(rex_prefix(is64bit, reg as u8, ptr_reg as u8, ind as u8))
+        }
+        self.buf.push(opcode);
+        match disp_mode {
+            Value => self
+                .buf
+                .push(mod_rm_byte(disp_mode, reg as u8, ptr_reg as u8)),
+            _ => {
+                if ptr_reg == RegX64::RBP || ptr_reg == RegX64::R13 {
+                    // For ptr operand with no displacement, RM = 101b is used to indicate pc-relative
+                    // 32-bit offset, so encode as a 0 8bit displacement instead
+                    if let NoDisp = disp_mode {
+                        disp_mode = Disp8;
+                    }
+                }
+                match index {
+                    Some((ind_reg, scale)) => {
+                        // Indicates no index, so cannot be used as an index
+                        assert!(ind_reg != RegX64::RSP);
+                        self.buf.push(mod_rm_byte(disp_mode, reg as u8, SIB_RM));
+                        self.buf.push(sib_byte(scale, ind_reg as u8, ptr_reg as u8));
+                    }
+                    None => {
+                        self.buf
+                            .push(mod_rm_byte(disp_mode, reg as u8, ptr_reg as u8));
+                        if ptr_reg == RegX64::RSP || ptr_reg == RegX64::R12 {
+                            // R/M = 100b is used to indicate SIB addressing mode, so if one of these
+                            // is needed as the ptr reg, encode with no index, and ptr_reg as base
+                            // (sib = 0x24)
+                            self.buf.push(sib_byte(1, SIB_RM, ptr_reg as u8));
+                        }
+                    }
+                }
+            }
+        }
+        match disp_mode {
+            NoDisp | Value => (),
+            Disp8 => self.buf.push(disp as u8),
+            Disp32 => self.buf.extend_from_slice(&disp.to_le_bytes()),
+        };
+        self
+    }
+
     /// add %r32>, %r32>
     pub fn add_reg32_reg32(&mut self, dest: RegX64, src: RegX64) -> &mut Self {
-        self.buf
-            .extend_from_slice(&instr_builder(0x01, src, dest, None, Value, 0));
-        self
+        self.build_instr(false, 0x01, src, dest, None, Value, 0)
     }
 
     /// add %r32, [%r64 + i8]
     pub fn add_reg32_ptr64_disp8(&mut self, dest: RegX64, src: RegX64, disp: i8) -> &mut Self {
-        self.buf
-            .extend_from_slice(&instr_builder(0x03, dest, src, None, Disp8, disp as u32));
-        self
+        self.build_instr(false, 0x03, dest, src, None, Disp8, disp as u32)
     }
 
     /// call %r64
@@ -145,59 +145,42 @@ impl EmitterX64 {
 
     /// mov %r64, %r64
     pub fn mov_reg64_reg64(&mut self, dest: RegX64, src: RegX64) -> &mut Self {
-        self.buf.push(rex_prefix(true, src as u8, dest as u8, 0));
-        self.buf.push(0x89);
-        self.buf.push(mod_rm_byte(Value, src as u8, dest as u8));
-        self
+        self.build_instr(true, 0x89, src, dest, None, Value, 0)
     }
 
     /// mov %r32, %r32
     pub fn mov_reg32_reg32(&mut self, dest: RegX64, src: RegX64) -> &mut Self {
-        self.buf
-            .extend_from_slice(&instr_builder(0x89, src, dest, None, Value, 0));
-        self
+        self.build_instr(false, 0x89, src, dest, None, Value, 0)
     }
 
     /// mov %r32, [%r64]
     pub fn mov_reg32_ptr64(&mut self, dest: RegX64, src: RegX64) -> &mut Self {
-        self.buf
-            .extend_from_slice(&instr_builder(0x8b, dest, src, None, NoDisp, 0)[..]);
-        self
+        self.build_instr(false, 0x8b, dest, src, None, NoDisp, 0)
     }
 
     /// mov [%r64], %r32
     pub fn mov_ptr64_reg32(&mut self, dest: RegX64, src: RegX64) -> &mut Self {
-        self.buf
-            .extend_from_slice(&instr_builder(0x89, src, dest, None, NoDisp, 0));
-        self
+        self.build_instr(false, 0x89, src, dest, None, NoDisp, 0)
     }
 
     /// mov %r32, [%r64 + i8]
     pub fn mov_reg32_ptr64_disp8(&mut self, dest: RegX64, src: RegX64, disp: i8) -> &mut Self {
-        self.buf
-            .extend_from_slice(&instr_builder(0x8b, dest, src, None, Disp8, disp as u32)[..]);
-        self
+        self.build_instr(false, 0x8b, dest, src, None, Disp8, disp as u32)
     }
 
     /// mov [%r64 + i8], %r32
     pub fn mov_ptr64_reg32_disp8(&mut self, dest: RegX64, src: RegX64, disp: i8) -> &mut Self {
-        self.buf
-            .extend_from_slice(&instr_builder(0x89, src, dest, None, Disp8, disp as u32)[..]);
-        self
+        self.build_instr(false, 0x89, src, dest, None, Disp8, disp as u32)
     }
 
     /// mov %r32, [%r64 + i32]
     pub fn mov_reg32_ptr64_disp32(&mut self, dest: RegX64, src: RegX64, disp: i32) -> &mut Self {
-        self.buf
-            .extend_from_slice(&instr_builder(0x8b, dest, src, None, Disp32, disp as u32)[..]);
-        self
+        self.build_instr(false, 0x8b, dest, src, None, Disp32, disp as u32)
     }
 
     /// mov [%r64 + i8], %r32
     pub fn mov_ptr64_reg32_disp32(&mut self, dest: RegX64, src: RegX64, disp: i32) -> &mut Self {
-        self.buf
-            .extend_from_slice(&instr_builder(0x89, src, dest, None, Disp32, disp as u32)[..]);
-        self
+        self.build_instr(false, 0x89, src, dest, None, Disp32, disp as u32)
     }
 
     /// mov %r32, [%r64 + scale * %r64]
@@ -220,15 +203,15 @@ impl EmitterX64 {
         ind: RegX64,
         disp: i32,
     ) -> &mut Self {
-        self.buf.extend_from_slice(&instr_builder(
+        self.build_instr(
+            false,
             0x8b,
             dest,
             base,
             Some((ind, scale)),
             Disp32,
             disp as u32,
-        ));
-        self
+        )
     }
 
     /// mov %r64, i32
