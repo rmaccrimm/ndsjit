@@ -265,23 +265,34 @@ fn test_mov_ptr64_imm32_disp8() {
     )
 }
 
-// #[test]
-// fn test_mov_ptr64_reg64_sib_disp32() {
-//     let mut code = EmitterX64::new();
-//     code.mov_ptr64_reg64_sib_disp32(RBX, 2, RAX, 128, RCX)
-//         .mov_ptr64_reg64_sib_disp32(RBP, 4, RBP, -454, RSI)
-//         .mov_ptr64_reg64_sib_disp32(RSP, 8, R13, 209384, R12)
-//         .mov_ptr64_reg64_sib_disp32(RDI, 1, R12, -943949, RAX);
-//     assert_eq!(
-//         code.buf,
-//         vec![
-//             0x48, 0x89, 0x8C, 0x43, 0x80, 0x00, 0x00, 0x00, // mov [rbx+2*rax+128], rcx
-//             0x48, 0x89, 0xB4, 0xAD, 0x3A, 0xFE, 0xFF, 0xFF, // mov [rbp+4*rbp-454], rsi
-//             0x4E, 0x89, 0xA4, 0xEC, 0xE8, 0x31, 0x03, 0x00, // mov [rsp+8*r13+209384], r12
-//             0x4A, 0x89, 0x84, 0x27, 0xB3, 0x98, 0xF1, 0xFF, // mov [rdi+r12-943949],rax
-//         ]
-//     )
-// }
+#[test]
+fn test_mov_reg32_ptr64_sib_disp32() {
+    let mut code = EmitterX64::new();
+    code.mov_reg32_ptr64_sib_disp32(RCX, RBX, 2, RAX, 128)
+        .mov_reg32_ptr64_sib_disp32(RSI, RBP, 4, RBP, -454)
+        .mov_reg32_ptr64_sib_disp32(R12, RSP, 8, R13, 209384)
+        .mov_reg32_ptr64_sib_disp32(RAX, RDI, 1, R12, -943949)
+        .mov_reg32_ptr64_sib_disp32(RSP, R13, 1, R8, -129)
+        .mov_reg32_ptr64_sib_disp32(R15, R12, 1, RBX, 349999);
+    assert_eq!(
+        code.buf,
+        vec![
+            0x8B, 0x8C, 0x43, 0x80, 0x00, 0x00, 0x00, // mov ecx, [rbx+2*rax+128]
+            0x8B, 0xB4, 0xAD, 0x3A, 0xFE, 0xFF, 0xFF, // mov esi, [rbp+4*rbp-454]
+            0x46, 0x8B, 0xA4, 0xEC, 0xE8, 0x31, 0x03, 0x00, // mov r12d, [rsp+8*r13+209384]
+            0x42, 0x8B, 0x84, 0x27, 0xB3, 0x98, 0xF1, 0xFF, // mov eax, [rdi+r12-943949]
+            0x43, 0x8B, 0xA4, 0x05, 0x7F, 0xFF, 0xFF, 0xFF, // mov esp, [r13+r8-129]
+            0x45, 0x8B, 0xBC, 0x1C, 0x2F, 0x57, 0x05, 0x00, // mov r15d, [r12+rbx+349999]
+        ]
+    );
+}
+
+#[test]
+#[should_panic]
+fn test_mov_reg32_ptr64_sib_disp32_sp_index() {
+    let mut code = EmitterX64::new();
+    code.mov_reg32_ptr64_sib_disp32(RCX, RBX, 2, RSP, 128);
+}
 
 #[test]
 fn test_mov_reg64_imm64() {
