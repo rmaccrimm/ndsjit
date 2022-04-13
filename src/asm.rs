@@ -14,7 +14,7 @@ pub struct AssemblerX64 {
     reg_alloc: RegAllocation,
 }
 
-const REG_SIZE: i8 = mem::size_of::<u64>() as i8;
+const REG_SIZE: i8 = mem::size_of::<u32>() as i8;
 
 // Stack contains prev stack pointer, followed by spilled registers
 const SPILL_START: i8 = -1 * mem::size_of::<u64>() as i8;
@@ -62,19 +62,19 @@ impl AssemblerX64 {
             .sub_reg64_imm32(RSP, stack_size);
 
         for (i, mapping) in self.reg_alloc.mapping.iter().enumerate() {
-            let vreg_disp = mem::size_of::<u64>() * i;
+            let vreg_disp = mem::size_of::<u32>() * i;
             assert!(vreg_disp < (1 << 7));
 
             match mapping {
                 Phys(r) => {
-                    self.code.mov_reg64_ptr64_disp8(*r, RCX, vreg_disp as i8);
+                    self.code.mov_reg32_ptr64_disp8(*r, RCX, vreg_disp as i8);
                 }
                 Spill(i) => {
                     // Since prev base ptr is first on stack, add 1 to each index
-                    let spill_stack_disp = mem::size_of::<u64>() as i8 * -i;
+                    let spill_stack_disp = mem::size_of::<u32>() as i8 * -i;
                     self.code
-                        .mov_reg64_ptr64_disp8(RAX, RCX, vreg_disp as i8)
-                        .mov_ptr64_reg64_disp8(RBP, RAX, SPILL_START + spill_stack_disp);
+                        .mov_reg32_ptr64_disp8(RAX, RCX, vreg_disp as i8)
+                        .mov_ptr64_reg32_disp8(RBP, RAX, SPILL_START + spill_stack_disp);
                 }
                 Unmapped => (),
             };
@@ -86,18 +86,18 @@ impl AssemblerX64 {
     // maybe should move to stack to free up another register?)
     pub fn gen_epilogue(&mut self) -> &mut Self {
         for (i, mapping) in self.reg_alloc.mapping.iter().enumerate() {
-            let vreg_disp = mem::size_of::<u64>() * i;
+            let vreg_disp = mem::size_of::<u32>() * i;
             assert!(vreg_disp < (1 << 7));
             match mapping {
                 Phys(r) => {
-                    self.code.mov_ptr64_reg64_disp8(RCX, *r, vreg_disp as i8);
+                    self.code.mov_ptr64_reg32_disp8(RCX, *r, vreg_disp as i8);
                 }
                 Spill(i) => {
                     // Since prev base ptr is first on stack, add 1 to each index
-                    let spill_stack_disp = mem::size_of::<u64>() as i8 * -i;
+                    let spill_stack_disp = mem::size_of::<u32>() as i8 * -i;
                     self.code
-                        .mov_reg64_ptr64_disp8(RAX, RBP, SPILL_START + spill_stack_disp)
-                        .mov_ptr64_reg64_disp8(RCX, RAX, vreg_disp as i8);
+                        .mov_reg32_ptr64_disp8(RAX, RBP, SPILL_START + spill_stack_disp)
+                        .mov_ptr64_reg32_disp8(RCX, RAX, vreg_disp as i8);
                 }
                 _ => (),
             }
@@ -116,19 +116,19 @@ impl AssemblerX64 {
 
     fn mov_reg(&mut self, dest: VReg, src: VReg) -> &mut Self {
         match (self.reg_alloc.get(dest), self.reg_alloc.get(src)) {
-            (Phys(rd), Phys(rs)) => self.code.mov_reg64_reg64(rd, rs),
+            (Phys(rd), Phys(rs)) => self.code.mov_reg32_reg32(rd, rs),
             (Phys(rd), Spill(is)) => {
                 self.code
-                    .mov_reg64_ptr64_disp8(rd, RBP, SPILL_START + REG_SIZE * -is)
+                    .mov_reg32_ptr64_disp8(rd, RBP, SPILL_START + REG_SIZE * -is)
             }
             (Spill(id), Phys(rs)) => {
                 self.code
-                    .mov_ptr64_reg64_disp8(RBP, rs, SPILL_START + REG_SIZE * -id)
+                    .mov_ptr64_reg32_disp8(RBP, rs, SPILL_START + REG_SIZE * -id)
             }
             (Spill(id), Spill(is)) => self
                 .code
-                .mov_reg64_ptr64_disp8(RAX, RBP, SPILL_START + REG_SIZE * -is)
-                .mov_ptr64_reg64_disp8(RBP, RAX, SPILL_START + REG_SIZE * -id),
+                .mov_reg32_ptr64_disp8(RAX, RBP, SPILL_START + REG_SIZE * -is)
+                .mov_ptr64_reg32_disp8(RBP, RAX, SPILL_START + REG_SIZE * -id),
             _ => panic!(),
         };
         self
@@ -151,15 +151,15 @@ impl AssemblerX64 {
         match self.reg_alloc.get(dest) {
             // TODO are unsigned to signed offset conversions going to be a problem?
             Phys(r) => {
-                self.code.mov_reg64_ptr64_disp32(r, RDX, addr as i32);
+                self.code.mov_reg32_ptr64_disp32(r, RDX, addr as i32);
             }
             Spill(i) => {
                 // TODO - assuming here we can't spill past size of i8, i.e. 127 bytes. Should have
                 // a check for that at some point (or stop using i8s)
                 let stack_offset = (SPILL_START + REG_SIZE * -i) as i32;
                 self.code
-                    .mov_reg64_ptr64_disp32(RAX, RCX, addr as i32)
-                    .mov_ptr64_reg64_disp32(RBP, RAX, stack_offset);
+                    .mov_reg32_ptr64_disp32(RAX, RDX, addr as i32)
+                    .mov_ptr64_reg32_disp32(RBP, RAX, stack_offset);
             }
             Unmapped => panic!(),
         };
@@ -201,8 +201,9 @@ mod tests {
             .mov_reg(R3, PC) // spill -> phys
             .gen_epilogue();
         let f = asm.get_exec_buffer();
+        dbg!(cpu.vregs);
         f.call(cpu.vreg_base_ptr(), cpu.mem_base_ptr());
-
+        dbg!(cpu.vregs);
         assert_eq!(cpu.vregs[R0 as usize], 4958);
         assert_eq!(cpu.vregs[R6 as usize], 4958);
         assert_eq!(cpu.vregs[SP as usize], 193);
@@ -230,16 +231,19 @@ mod tests {
         cpu.mem[99] = 0x32;
         let mut asm = AssemblerX64::new(RegAllocation::default());
         asm.gen_prologue()
-            .ldr_abs(R0, 80)
+            .ldr_abs(R0, 80) // phys
+            .ldr_abs(PC, 85) // spill
             // .ldr_rel_ind(R1, SP, R8)
             // .ldr_rel_imm(R2, SP, 16)
             // .ldr_rel_imm(R3, SP, 0)
             .gen_epilogue();
         asm.hex_dump();
+        dbg!(cpu.vregs);
         let f = asm.get_exec_buffer();
         f.call(cpu.vreg_base_ptr(), cpu.mem_base_ptr());
         dbg!(cpu.vregs);
         assert_eq!(cpu.vregs[R0 as usize], 0x4ef103a3);
+        assert_eq!(cpu.vregs[PC as usize], 0x0009da73);
         // assert_eq!(cpu.vregs[R1 as usize], 0x4ef103a3);
         // assert_eq!(cpu.vregs[R2 as usize], 0x09da73bb);
         // assert_eq!(cpu.vregs[R3 as usize], 0x32ff786c);
