@@ -2,7 +2,7 @@ use std::ptr;
 
 pub struct ARM7 {
     // TODO - these should be 32 bit
-    pub vregs: [u64; 16],
+    pub vregs: [u32; 16],
     pub mem: Box<[u8]>,
 }
 
@@ -75,12 +75,8 @@ mod tests {
             *st.vreg_base_ptr().offset(1) = 0x8d;
             *st.vreg_base_ptr().offset(2) = 0x0f;
             *st.vreg_base_ptr().offset(3) = 0x35;
-            *st.vreg_base_ptr().offset(4) = 0x44;
-            *st.vreg_base_ptr().offset(5) = 0x00;
-            *st.vreg_base_ptr().offset(6) = 0xbc;
-            *st.vreg_base_ptr().offset(7) = 0x9e;
             // Assume system is little-endian
-            assert_eq!(st.vregs[0], 0x9ebc0044350f8d19);
+            assert_eq!(st.vregs[0], 0x350f8d19);
         }
     }
     #[test]
@@ -88,17 +84,13 @@ mod tests {
         let mut st = ARM7::new();
         unsafe {
             // mem[0]
-            let base: isize = 15 * mem::size_of::<u64>() as isize;
+            let base: isize = 15 * mem::size_of::<u32>() as isize;
             *st.vreg_base_ptr().offset(base + 0) = 0x22;
             *st.vreg_base_ptr().offset(base + 1) = 0xc0;
             *st.vreg_base_ptr().offset(base + 2) = 0x31;
             *st.vreg_base_ptr().offset(base + 3) = 0x9a;
-            *st.vreg_base_ptr().offset(base + 4) = 0x4f;
-            *st.vreg_base_ptr().offset(base + 5) = 0x66;
-            *st.vreg_base_ptr().offset(base + 6) = 0x01;
-            *st.vreg_base_ptr().offset(base + 7) = 0xf0;
             // Assume system is little-endian
-            assert_eq!(st.vregs[15], 0xf001664f9a31c022);
+            assert_eq!(st.vregs[15], 0x9a31c022);
         }
     }
     #[test]
