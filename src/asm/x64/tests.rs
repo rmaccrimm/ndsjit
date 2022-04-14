@@ -295,6 +295,28 @@ fn test_mov_reg32_ptr64_sib_disp32_sp_index() {
 }
 
 #[test]
+fn test_mov_reg32_ptr64_sib() {
+    let mut code = EmitterX64::new();
+    code.mov_reg32_ptr64_sib(RCX, RBX, 2, RAX)
+        .mov_reg32_ptr64_sib(RSI, RBP, 4, RBP)
+        .mov_reg32_ptr64_sib(R12, RSP, 8, R13)
+        .mov_reg32_ptr64_sib(RAX, RDI, 1, R12)
+        .mov_reg32_ptr64_sib(RSP, R13, 1, R8)
+        .mov_reg32_ptr64_sib(R15, R12, 1, RBX);
+    assert_eq!(
+        code.buf,
+        vec![
+            0x8B, 0x0C, 0x43, // mov ecx, [rbx+2*rax]
+            0x8B, 0x74, 0xAD, 0x00, // mov esi, [rbp+4*rbp]
+            0x46, 0x8B, 0x24, 0xEC, // mov r12d, [rsp+8*r13]
+            0x42, 0x8B, 0x04, 0x27, // mov eax, [rdi+r12]
+            0x43, 0x8B, 0x64, 0x05, 0x00, // mov esp, [r13+r8]
+            0x45, 0x8B, 0x3C, 0x1C, // mov r15d, [r12+rbx]
+        ]
+    );
+}
+
+#[test]
 fn test_mov_reg64_imm64() {
     let mut code = EmitterX64::new();
     code.mov_reg64_imm64(RAX, 500000000000);

@@ -167,6 +167,28 @@ impl AssemblerX64 {
 
     /// Load value to register from address in pointer register plus immediate offset
     fn ldr_rel_imm(&mut self, dest: VReg, ptr: VReg, offset: i32) -> &mut Self {
+        match (self.reg_alloc.get(dest), self.reg_alloc.get(ptr)) {
+            (Phys(rd), Phys(rs)) => {
+                self.code.mov_reg32_ptr64_sib_disp32(rd, RDX, 1, rs, offset);
+            }
+            (Phys(rd), Spill(is)) => {
+                self.code
+                    .mov_reg32_ptr64_disp8(RAX, RBP, spill_stack_disp(is) as i8)
+                    .mov_reg32_ptr64_sib_disp32(rd, RDX, 1, RAX, offset);
+            }
+            (Spill(id), Phys(rs)) => {
+                self.code
+                    .mov_reg32_ptr64_sib_disp32(RAX, RDX, 1, rs, offset)
+                    .mov_ptr64_reg32_disp8(RBP, RAX, spill_stack_disp(id) as i8);
+            }
+            (Spill(id), Spill(is)) => {
+                self.code
+                    .mov_reg32_ptr64_disp8(RAX, RBP, spill_stack_disp(is) as i8)
+                    .mov_reg32_ptr64_sib_disp32(RAX, RDX, 1, RAX, offset)
+                    .mov_ptr64_reg32_disp8(RBP, RAX, spill_stack_disp(id) as i8);
+            }
+            _ => panic!(),
+        };
         self
     }
 
@@ -246,9 +268,7 @@ mod tests {
         assert_eq!(cpu.vregs[R3 as usize], 4958);
     }
 
-    #[test]
-    fn test_ldr() {
-        let mut cpu = ARM7::new();
+    fn setup_cpu_test_data(cpu: &mut ARM7) {
         cpu.vregs[SP as usize] = 80;
         cpu.vregs[R3 as usize] = 81;
         cpu.vregs[R4 as usize] = 16;
@@ -265,15 +285,20 @@ mod tests {
         cpu.mem[97] = 0x78;
         cpu.mem[98] = 0xff;
         cpu.mem[99] = 0x32;
+        cpu.mem[10100] = 0x1a;
+        cpu.mem[10101] = 0x6b;
+        cpu.mem[10102] = 0x80;
+        cpu.mem[10103] = 0xcc;
+    }
+
+    #[test]
+    fn test_ldr_abs() {
+        let mut cpu = ARM7::new();
+        setup_cpu_test_data(&mut cpu);
         let mut asm = AssemblerX64::new(RegAllocation::default());
         asm.gen_prologue()
             .ldr_abs(R0, 80) // phys
             .ldr_abs(PC, 98) // spill
-            .ldr_rel_ind_imm(R1, R3, R4, 0) // ppp
-            .ldr_rel_ind_imm(R2, R3, R11, 0) // pps
-            .ldr_rel_ind_imm(R5, SP, R4, 0) // psp
-            .ldr_rel_ind_imm(R6, SP, R11, 0) // pss
-            .ldr_rel_ind_imm(LR, SP, R4, 0) // ssp
             .gen_epilogue();
         asm.hex_dump();
         dbg!(cpu.vregs);
@@ -282,14 +307,54 @@ mod tests {
         dbg!(cpu.vregs);
         assert_eq!(cpu.vregs[R0 as usize], 0x4ef103a3);
         assert_eq!(cpu.vregs[PC as usize], 0x000032ff);
-        // assert_eq!(cpu.vregs[R1 as usize], 0x00000009);
-        // assert_eq!(cpu.vregs[R2 as usize], 0x0009da73);
-        // assert_eq!(cpu.vregs[R5 as usize], 0x32ff786c);
-        // assert_eq!(cpu.vregs[R6 as usize], 0x09da73bb);
-        // assert_eq!(cpu.vregs[LR as usize], 0x32ff786c);
-        // assert_eq!(cpu.vregs[R1 as usize], 0x4ef103a3);
-        // assert_eq!(cpu.vregs[R2 as usize], 0x09da73bb);
-        // assert_eq!(cpu.vregs[R3 as usize], 0x32ff786c);
+    }
+
+    #[test]
+    fn test_ldr_rel_ind_imm() {
+        let mut cpu = ARM7::new();
+        setup_cpu_test_data(&mut cpu);
+        let mut asm = AssemblerX64::new(RegAllocation::default());
+        asm.gen_prologue()
+            .ldr_rel_ind_imm(R1, R3, R4, 0) // ppp
+            .ldr_rel_ind_imm(R2, R3, R11, 0) // pps
+            .ldr_rel_ind_imm(R5, SP, R4, 0) // psp
+            .ldr_rel_ind_imm(R6, SP, R11, 0) // pss
+            .ldr_rel_ind_imm(LR, SP, R4, 0) // ssp
+            .ldr_rel_ind_imm(R7, SP, R11, 10016)
+            .ldr_rel_ind_imm(R8, SP, R4, -10)
+            .gen_epilogue();
+        asm.hex_dump();
+        dbg!(cpu.vregs);
+        let f = asm.get_exec_buffer();
+        f.call(cpu.vreg_base_ptr(), cpu.mem_base_ptr());
+        assert_eq!(cpu.vregs[R1 as usize], 0x0032ff78);
+        assert_eq!(cpu.vregs[R2 as usize], 0x0009da73);
+        assert_eq!(cpu.vregs[R5 as usize], 0x32ff786c);
+        assert_eq!(cpu.vregs[R6 as usize], 0x09da73bb);
+        assert_eq!(cpu.vregs[LR as usize], 0x32ff786c);
+        assert_eq!(cpu.vregs[R7 as usize], 0xcc806b1a);
+        assert_eq!(cpu.vregs[R8 as usize], 0x000009da);
+    }
+
+    #[test]
+    fn test_ldr_rel_imm() {
+        let mut cpu = ARM7::new();
+        setup_cpu_test_data(&mut cpu);
+        let mut asm = AssemblerX64::new(RegAllocation::default());
+        asm.gen_prologue()
+            .ldr_rel_imm(R9, R3, -1) // pp
+            .ldr_rel_imm(R10, SP, 16) // ps
+            .ldr_rel_imm(PC, R4, 64) // sp
+            .ldr_rel_imm(R12, SP, 2) // ss
+            .gen_epilogue();
+        asm.hex_dump();
+        dbg!(cpu.vregs);
+        let f = asm.get_exec_buffer();
+        f.call(cpu.vreg_base_ptr(), cpu.mem_base_ptr());
+        assert_eq!(cpu.vregs[R9 as usize], 0x4ef103a3);
+        assert_eq!(cpu.vregs[R10 as usize], 0x32ff786c);
+        assert_eq!(cpu.vregs[PC as usize], 0x4ef103a3);
+        assert_eq!(cpu.vregs[R12 as usize], 0x73bb4ef1);
     }
 
     fn test_call_reg() {}

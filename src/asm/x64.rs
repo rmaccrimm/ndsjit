@@ -66,7 +66,8 @@ impl EmitterX64 {
         EmitterX64 { buf: Vec::new() }
     }
 
-    /// Handles logic shared my most instructions
+    /// Handles logic shared my many instructions (most mov's at least, doesn't support immediate
+    /// operands at the moment)
     fn build_instr(
         &mut self,
         is64bit: bool,
@@ -92,8 +93,8 @@ impl EmitterX64 {
                 .push(mod_rm_byte(disp_mode, reg as u8, ptr_reg as u8)),
             _ => {
                 if ptr_reg == RegX64::RBP || ptr_reg == RegX64::R13 {
-                    // For ptr operand with no displacement, RM = 101b is used to indicate pc-relative
-                    // 32-bit offset, so encode as a 0 8bit displacement instead
+                    // For ptr operand with no displacement, RM = 101b is used to indicate
+                    // pc-relative 32-bit offset, so encode as a 0 8bit displacement instead
                     if let NoDisp = disp_mode {
                         disp_mode = Disp8;
                     }
@@ -109,9 +110,9 @@ impl EmitterX64 {
                         self.buf
                             .push(mod_rm_byte(disp_mode, reg as u8, ptr_reg as u8));
                         if ptr_reg == RegX64::RSP || ptr_reg == RegX64::R12 {
-                            // R/M = 100b is used to indicate SIB addressing mode, so if one of these
-                            // is needed as the ptr reg, encode with no index, and ptr_reg as base
-                            // (sib = 0x24)
+                            // R/M = 100b is used to indicate SIB addressing mode, so if one of
+                            // these is needed as the ptr reg, encode with no index, and ptr_reg as
+                            // base (sib = 0x24)
                             self.buf.push(sib_byte(1, SIB_RM, ptr_reg as u8));
                         }
                     }
@@ -191,7 +192,7 @@ impl EmitterX64 {
         scale: u8,
         ind: RegX64,
     ) -> &mut Self {
-        self
+        self.build_instr(false, 0x8b, dest, base, Some((ind, scale)), NoDisp, 0)
     }
 
     /// mov %r32, [%r64 + scale * %r64 + i32]
