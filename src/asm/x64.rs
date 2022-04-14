@@ -20,6 +20,51 @@ pub enum RegX64 {
     R15 = 15,
 }
 
+#[derive(Copy, Clone, PartialEq)]
+pub enum RegOperand {
+    Reg8(RegX64),
+    Reg16(RegX64),
+    Reg32(RegX64),
+    Reg64(RegX64),
+}
+use RegOperand::*;
+
+impl RegOperand {
+    pub fn is_reg8(&self) -> bool {
+        match self {
+            Reg16(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_reg16(&self) -> bool {
+        match self {
+            Reg16(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_reg32(&self) -> bool {
+        match self {
+            Reg16(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_reg64(&self) -> bool {
+        match self {
+            Reg64(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn unwrap(&self) -> RegX64 {
+        match self {
+            Reg8(r) | Reg16(r) | Reg32(r) | Reg64(r) => *r,
+        }
+    }
+}
+
 /// First 2 bits of ModR/M byte. Indicates what kind of displacement follows an instruction when
 /// using a register as a pointer, that the register is being used as a value directly
 #[derive(Copy, Clone)]
@@ -41,6 +86,8 @@ fn rex_prefix(w: bool, reg: u8, rm_or_base: u8, index: u8) -> u8 {
 /// r/m value of b100 in the modr/m byte indicates the scale-index-bound (SIB) addressing mode is
 /// used. It also indicates no index when used as the index field of the SIB byte
 const SIB_RM: u8 = 0b100;
+
+const PREF_16B: u8 = 0x66;
 
 /// ModR/M byte which encodes an addressing mode, and the 3 lsb of a register operand (reg) and
 /// register or memory operand (r/m). Alternatively the reg field is sometimes an extension of the
@@ -68,11 +115,10 @@ impl EmitterX64 {
 
     /// Handles logic shared my many instructions (most mov's at least, doesn't support immediate
     /// operands at the moment)
-    fn build_instr(
+    fn modrm_instr(
         &mut self,
-        is64bit: bool,
         opcode: u8,
-        reg: RegX64,
+        reg: RegOperand,
         ptr_reg: RegX64,
         index: Option<(RegX64, u8)>,
         disp_mode: DispMode,
@@ -82,15 +128,23 @@ impl EmitterX64 {
         // Using RAX here because it's value is 0, which also indicates no index
         let (ind, _) = index.unwrap_or((RegX64::RAX, 0));
 
-        if is64bit || reg as u8 > 7 || ptr_reg as u8 > 7 || ind as u8 > 7 {
-            self.buf
-                .push(rex_prefix(is64bit, reg as u8, ptr_reg as u8, ind as u8))
+        if reg.is_reg16() {
+            self.buf.push(PREF_16B);
+        }
+
+        if reg.is_reg64() || reg.unwrap() as u8 > 7 || ptr_reg as u8 > 7 || ind as u8 > 7 {
+            self.buf.push(rex_prefix(
+                reg.is_reg64(),
+                reg.unwrap() as u8,
+                ptr_reg as u8,
+                ind as u8,
+            ))
         }
         self.buf.push(opcode);
         match disp_mode {
             Value => self
                 .buf
-                .push(mod_rm_byte(disp_mode, reg as u8, ptr_reg as u8)),
+                .push(mod_rm_byte(disp_mode, reg.unwrap() as u8, ptr_reg as u8)),
             _ => {
                 if ptr_reg == RegX64::RBP || ptr_reg == RegX64::R13 {
                     // For ptr operand with no displacement, RM = 101b is used to indicate
@@ -103,12 +157,13 @@ impl EmitterX64 {
                     Some((ind_reg, scale)) => {
                         // Indicates no index, so cannot be used as an index
                         assert!(ind_reg != RegX64::RSP);
-                        self.buf.push(mod_rm_byte(disp_mode, reg as u8, SIB_RM));
+                        self.buf
+                            .push(mod_rm_byte(disp_mode, reg.unwrap() as u8, SIB_RM));
                         self.buf.push(sib_byte(scale, ind_reg as u8, ptr_reg as u8));
                     }
                     None => {
                         self.buf
-                            .push(mod_rm_byte(disp_mode, reg as u8, ptr_reg as u8));
+                            .push(mod_rm_byte(disp_mode, reg.unwrap() as u8, ptr_reg as u8));
                         if ptr_reg == RegX64::RSP || ptr_reg == RegX64::R12 {
                             // R/M = 100b is used to indicate SIB addressing mode, so if one of
                             // these is needed as the ptr reg, encode with no index, and ptr_reg as
@@ -129,12 +184,12 @@ impl EmitterX64 {
 
     /// add %r32>, %r32>
     pub fn add_reg32_reg32(&mut self, dest: RegX64, src: RegX64) -> &mut Self {
-        self.build_instr(false, 0x01, src, dest, None, Value, 0)
+        self.modrm_instr(0x01, Reg32(src), dest, None, Value, 0)
     }
 
     /// add %r32, [%r64 + i8]
     pub fn add_reg32_ptr64_disp8(&mut self, dest: RegX64, src: RegX64, disp: i8) -> &mut Self {
-        self.build_instr(false, 0x03, dest, src, None, Disp8, disp as u32)
+        self.modrm_instr(0x03, Reg32(dest), src, None, Disp8, disp as u32)
     }
 
     /// call %r64
@@ -146,42 +201,46 @@ impl EmitterX64 {
 
     /// mov %r64, %r64
     pub fn mov_reg64_reg64(&mut self, dest: RegX64, src: RegX64) -> &mut Self {
-        self.build_instr(true, 0x89, src, dest, None, Value, 0)
+        self.modrm_instr(0x89, Reg64(src), dest, None, Value, 0)
     }
 
     /// mov %r32, %r32
     pub fn mov_reg32_reg32(&mut self, dest: RegX64, src: RegX64) -> &mut Self {
-        self.build_instr(false, 0x89, src, dest, None, Value, 0)
+        self.modrm_instr(0x89, Reg32(src), dest, None, Value, 0)
     }
 
     /// mov %r32, [%r64]
-    pub fn mov_reg32_ptr64(&mut self, dest: RegX64, src: RegX64) -> &mut Self {
-        self.build_instr(false, 0x8b, dest, src, None, NoDisp, 0)
+    pub fn mov_reg_ptr(&mut self, dest: RegOperand, src: RegX64) -> &mut Self {
+        if dest.is_reg8() {
+            self.modrm_instr(0x8a, dest, src, None, NoDisp, 0)
+        } else {
+            self.modrm_instr(0x8b, dest, src, None, NoDisp, 0)
+        }
     }
 
     /// mov [%r64], %r32
     pub fn mov_ptr64_reg32(&mut self, dest: RegX64, src: RegX64) -> &mut Self {
-        self.build_instr(false, 0x89, src, dest, None, NoDisp, 0)
+        self.modrm_instr(0x89, Reg32(src), dest, None, NoDisp, 0)
     }
 
     /// mov %r32, [%r64 + i8]
     pub fn mov_reg32_ptr64_disp8(&mut self, dest: RegX64, src: RegX64, disp: i8) -> &mut Self {
-        self.build_instr(false, 0x8b, dest, src, None, Disp8, disp as u32)
+        self.modrm_instr(0x8b, Reg32(dest), src, None, Disp8, disp as u32)
     }
 
     /// mov [%r64 + i8], %r32
     pub fn mov_ptr64_reg32_disp8(&mut self, dest: RegX64, src: RegX64, disp: i8) -> &mut Self {
-        self.build_instr(false, 0x89, src, dest, None, Disp8, disp as u32)
+        self.modrm_instr(0x89, Reg32(src), dest, None, Disp8, disp as u32)
     }
 
     /// mov %r32, [%r64 + i32]
     pub fn mov_reg32_ptr64_disp32(&mut self, dest: RegX64, src: RegX64, disp: i32) -> &mut Self {
-        self.build_instr(false, 0x8b, dest, src, None, Disp32, disp as u32)
+        self.modrm_instr(0x8b, Reg32(dest), src, None, Disp32, disp as u32)
     }
 
     /// mov [%r64 + i8], %r32
     pub fn mov_ptr64_reg32_disp32(&mut self, dest: RegX64, src: RegX64, disp: i32) -> &mut Self {
-        self.build_instr(false, 0x89, src, dest, None, Disp32, disp as u32)
+        self.modrm_instr(0x89, Reg32(src), dest, None, Disp32, disp as u32)
     }
 
     /// mov %r32, [%r64 + scale * %r64]
@@ -192,7 +251,7 @@ impl EmitterX64 {
         scale: u8,
         ind: RegX64,
     ) -> &mut Self {
-        self.build_instr(false, 0x8b, dest, base, Some((ind, scale)), NoDisp, 0)
+        self.modrm_instr(0x8b, Reg32(dest), base, Some((ind, scale)), NoDisp, 0)
     }
 
     /// mov %r32, [%r64 + scale * %r64 + i32]
@@ -204,10 +263,9 @@ impl EmitterX64 {
         ind: RegX64,
         disp: i32,
     ) -> &mut Self {
-        self.build_instr(
-            false,
+        self.modrm_instr(
             0x8b,
-            dest,
+            Reg32(dest),
             base,
             Some((ind, scale)),
             Disp32,
@@ -325,7 +383,7 @@ impl EmitterX64 {
             return self.pop_ptr64_disp8(reg, 0);
         }
         if (reg as u8) >= 8 {
-            // For extended 64-bit registers (R8-15), reg msb is stored in the REX prefix
+            // For extended 64-bit registers (Reg8-15), reg msb is stored in the REX prefix
             self.buf.push(rex_prefix(false, 0, reg as u8, 0));
         }
         self.buf.push(0x8f | (reg as u8 & 0x7));
