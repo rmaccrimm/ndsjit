@@ -32,7 +32,7 @@ use RegOperand::*;
 impl RegOperand {
     pub fn is_reg8(&self) -> bool {
         match self {
-            Reg16(_) => true,
+            Reg8(_) => true,
             _ => false,
         }
     }
@@ -46,7 +46,7 @@ impl RegOperand {
 
     pub fn is_reg32(&self) -> bool {
         match self {
-            Reg16(_) => true,
+            Reg32(_) => true,
             _ => false,
         }
     }
@@ -65,16 +65,89 @@ impl RegOperand {
     }
 }
 
+#[derive(Copy, Clone, PartialEq)]
+pub enum PtrOperand {
+    BaseNoDisp {
+        base: RegX64,
+    },
+    BaseDisp8 {
+        base: RegX64,
+        disp: u8,
+    },
+    BaseDisp32 {
+        base: RegX64,
+        disp: u32,
+    },
+    SIBNoDisp {
+        base: RegX64,
+        index: RegX64,
+        scale: u8,
+    },
+    SIBDisp8 {
+        base: RegX64,
+        index: RegX64,
+        scale: u8,
+        disp: u8,
+    },
+    SIBDisp32 {
+        base: RegX64,
+        index: RegX64,
+        scale: u8,
+        disp: u32,
+    },
+    /// Not really a pointer, but encoded the same way.
+    /// Indicates the register value is being used directly
+    RegValue {
+        base: RegX64,
+    },
+}
+use PtrOperand::*;
+
+impl PtrOperand {
+    /// Get base register as u8
+    pub fn base(&self) -> u8 {
+        match self {
+            BaseNoDisp { base }
+            | BaseDisp8 { base, .. }
+            | BaseDisp32 { base, .. }
+            | SIBNoDisp { base, .. }
+            | SIBDisp8 { base, .. }
+            | SIBDisp32 { base, .. }
+            | RegValue { base } => *base as u8,
+        }
+    }
+
+    /// Get index register as u8, if present, or return default
+    pub fn ind_or(&self, default: u8) -> u8 {
+        match self {
+            BaseNoDisp { .. } | BaseDisp8 { .. } | BaseDisp32 { .. } | RegValue { .. } => default,
+            SIBNoDisp { index, .. } | SIBDisp8 { index, .. } | SIBDisp32 { index, .. } => {
+                *index as u8
+            }
+        }
+    }
+
+    /// Get mod bits for operand
+    pub fn op_mod(&self) -> Mod {
+        match self {
+            BaseNoDisp { .. } | SIBNoDisp { .. } => NoDisp,
+            BaseDisp8 { .. } | SIBDisp8 { .. } => Disp8,
+            BaseDisp32 { .. } | SIBDisp32 { .. } => Disp32,
+            RegValue { .. } => Value,
+        }
+    }
+}
+
 /// First 2 bits of ModR/M byte. Indicates what kind of displacement follows an instruction when
 /// using a register as a pointer, that the register is being used as a value directly
-#[derive(Copy, Clone)]
-enum DispMode {
+#[derive(Copy, Clone, PartialEq)]
+pub enum Mod {
     NoDisp = 0,
     Disp8 = 1,
     Disp32 = 2,
     Value = 3,
 }
-use DispMode::*;
+use Mod::*;
 
 /// REX prefix byte, which extends the ModR/M and/or SIB bytes in 64 bit mode by encoding the msb
 /// for operands. W indicates 64-bit operands, but is sometimes not needed (e.g. in push/pop)
@@ -92,7 +165,7 @@ const PREF_16B: u8 = 0x66;
 /// ModR/M byte which encodes an addressing mode, and the 3 lsb of a register operand (reg) and
 /// register or memory operand (r/m). Alternatively the reg field is sometimes an extension of the
 /// instruction opcode
-fn mod_rm_byte(mode: DispMode, reg_or_op: u8, rm: u8) -> u8 {
+fn mod_rm_byte(mode: Mod, reg_or_op: u8, rm: u8) -> u8 {
     (mode as u8 & 0x3) << 6 | (reg_or_op & 0x7) << 3 | (rm & 0x7)
 }
 
@@ -115,81 +188,92 @@ impl EmitterX64 {
 
     /// Handles logic shared my many instructions (most mov's at least, doesn't support immediate
     /// operands at the moment)
-    fn modrm_instr(
-        &mut self,
-        opcode: u8,
-        reg: RegOperand,
-        ptr_reg: RegX64,
-        index: Option<(RegX64, u8)>,
-        disp_mode: DispMode,
-        disp: u32,
-    ) -> &mut Self {
-        let mut disp_mode = disp_mode;
-        // Using RAX here because it's value is 0, which also indicates no index
-        let (ind, _) = index.unwrap_or((RegX64::RAX, 0));
-
+    fn modrm_instr(&mut self, opcode: u8, reg: RegOperand, ptr: PtrOperand) -> &mut Self {
+        // 16-bit override prefix
         if reg.is_reg16() {
             self.buf.push(PREF_16B);
         }
-
-        if reg.is_reg64() || reg.unwrap() as u8 > 7 || ptr_reg as u8 > 7 || ind as u8 > 7 {
+        // REX prefix
+        if reg.is_reg64() || reg.unwrap() as u8 > 7 || ptr.base() > 7 || ptr.ind_or(0) > 7 {
             self.buf.push(rex_prefix(
                 reg.is_reg64(),
                 reg.unwrap() as u8,
-                ptr_reg as u8,
-                ind as u8,
+                ptr.base(),
+                ptr.ind_or(0),
             ))
         }
         self.buf.push(opcode);
-        match disp_mode {
-            Value => self
-                .buf
-                .push(mod_rm_byte(disp_mode, reg.unwrap() as u8, ptr_reg as u8)),
-            _ => {
-                if ptr_reg == RegX64::RBP || ptr_reg == RegX64::R13 {
-                    // For ptr operand with no displacement, RM = 101b is used to indicate
-                    // pc-relative 32-bit offset, so encode as a 0 8bit displacement instead
-                    if let NoDisp = disp_mode {
-                        disp_mode = Disp8;
-                    }
-                }
-                match index {
-                    Some((ind_reg, scale)) => {
-                        // Indicates no index, so cannot be used as an index
-                        assert!(ind_reg != RegX64::RSP);
-                        self.buf
-                            .push(mod_rm_byte(disp_mode, reg.unwrap() as u8, SIB_RM));
-                        self.buf.push(sib_byte(scale, ind_reg as u8, ptr_reg as u8));
-                    }
-                    None => {
-                        self.buf
-                            .push(mod_rm_byte(disp_mode, reg.unwrap() as u8, ptr_reg as u8));
-                        if ptr_reg == RegX64::RSP || ptr_reg == RegX64::R12 {
-                            // R/M = 100b is used to indicate SIB addressing mode, so if one of
-                            // these is needed as the ptr reg, encode with no index, and ptr_reg as
-                            // base (sib = 0x24)
-                            self.buf.push(sib_byte(1, SIB_RM, ptr_reg as u8));
-                        }
-                    }
-                }
+        let mut ptr = ptr;
+
+        // For ptr operand with no displacement, RM = 101b (RBP and R13) is used to indicate
+        // pc-relative 32-bit offset, so encode as a 0 8bit displacement instead
+        if ptr.op_mod() == NoDisp && (ptr.base() & 0b111 == 0b101) {
+            ptr = match ptr {
+                BaseNoDisp { base } => BaseDisp8 { base, disp: 0 },
+                SIBNoDisp { base, index, scale } => SIBDisp8 {
+                    base,
+                    index,
+                    scale,
+                    disp: 0,
+                },
+                _ => ptr,
             }
         }
-        match disp_mode {
-            NoDisp | Value => (),
-            Disp8 => self.buf.push(disp as u8),
-            Disp32 => self.buf.extend_from_slice(&disp.to_le_bytes()),
+        // ModR/M byte and SIB byte
+        match ptr {
+            RegValue { base } => {
+                self.buf
+                    .push(mod_rm_byte(ptr.op_mod(), reg.unwrap() as u8, base as u8));
+            }
+            BaseNoDisp { base } | BaseDisp8 { base, .. } | BaseDisp32 { base, .. } => {
+                self.buf
+                    .push(mod_rm_byte(ptr.op_mod(), reg.unwrap() as u8, base as u8));
+                // R/M = 100b (RSP and R12) is used to indicate SIB addressing mode, so if one of
+                // these is needed as the ptr reg, encode as SIB with no index, (sib = 0x24)
+                if ptr.base() & 0b111 == 0b100 {
+                    self.buf.push(sib_byte(1, SIB_RM, base as u8));
+                }
+            }
+            SIBNoDisp { base, index, scale }
+            | SIBDisp8 {
+                base, index, scale, ..
+            }
+            | SIBDisp32 {
+                base, index, scale, ..
+            } => {
+                // Indicates no index, so cannot be used as an index
+                assert!(index != RegX64::RSP);
+                self.buf
+                    .push(mod_rm_byte(ptr.op_mod(), reg.unwrap() as u8, SIB_RM));
+                self.buf.push(sib_byte(scale, index as u8, base as u8));
+            }
+        }
+        // Displacements
+        match ptr {
+            BaseDisp8 { disp, .. } | SIBDisp8 { disp, .. } => self.buf.push(disp as u8),
+            BaseDisp32 { disp, .. } | SIBDisp32 { disp, .. } => {
+                self.buf.extend_from_slice(&disp.to_le_bytes())
+            }
+            _ => (),
         };
         self
     }
 
     /// add %r32>, %r32>
     pub fn add_reg32_reg32(&mut self, dest: RegX64, src: RegX64) -> &mut Self {
-        self.modrm_instr(0x01, Reg32(src), dest, None, Value, 0)
+        self.modrm_instr(0x01, Reg32(src), RegValue { base: dest })
     }
 
     /// add %r32, [%r64 + i8]
     pub fn add_reg32_ptr64_disp8(&mut self, dest: RegX64, src: RegX64, disp: i8) -> &mut Self {
-        self.modrm_instr(0x03, Reg32(dest), src, None, Disp8, disp as u32)
+        self.modrm_instr(
+            0x03,
+            Reg32(dest),
+            BaseDisp8 {
+                base: src,
+                disp: disp as u8,
+            },
+        )
     }
 
     /// call %r64
@@ -201,46 +285,74 @@ impl EmitterX64 {
 
     /// mov %r64, %r64
     pub fn mov_reg64_reg64(&mut self, dest: RegX64, src: RegX64) -> &mut Self {
-        self.modrm_instr(0x89, Reg64(src), dest, None, Value, 0)
+        self.modrm_instr(0x89, Reg64(src), RegValue { base: dest })
     }
 
     /// mov %r32, %r32
     pub fn mov_reg32_reg32(&mut self, dest: RegX64, src: RegX64) -> &mut Self {
-        self.modrm_instr(0x89, Reg32(src), dest, None, Value, 0)
+        self.modrm_instr(0x89, Reg32(src), RegValue { base: dest })
     }
 
     /// mov %r32, [%r64]
-    pub fn mov_reg_ptr(&mut self, dest: RegOperand, src: RegX64) -> &mut Self {
+    pub fn mov_reg_ptr(&mut self, dest: RegOperand, src: PtrOperand) -> &mut Self {
         if dest.is_reg8() {
-            self.modrm_instr(0x8a, dest, src, None, NoDisp, 0)
+            self.modrm_instr(0x8a, dest, src)
         } else {
-            self.modrm_instr(0x8b, dest, src, None, NoDisp, 0)
+            self.modrm_instr(0x8b, dest, src)
         }
     }
 
     /// mov [%r64], %r32
     pub fn mov_ptr64_reg32(&mut self, dest: RegX64, src: RegX64) -> &mut Self {
-        self.modrm_instr(0x89, Reg32(src), dest, None, NoDisp, 0)
+        self.modrm_instr(0x89, Reg32(src), BaseNoDisp { base: dest })
     }
 
     /// mov %r32, [%r64 + i8]
     pub fn mov_reg32_ptr64_disp8(&mut self, dest: RegX64, src: RegX64, disp: i8) -> &mut Self {
-        self.modrm_instr(0x8b, Reg32(dest), src, None, Disp8, disp as u32)
+        self.modrm_instr(
+            0x8b,
+            Reg32(dest),
+            BaseDisp8 {
+                base: src,
+                disp: disp as u8,
+            },
+        )
     }
 
     /// mov [%r64 + i8], %r32
     pub fn mov_ptr64_reg32_disp8(&mut self, dest: RegX64, src: RegX64, disp: i8) -> &mut Self {
-        self.modrm_instr(0x89, Reg32(src), dest, None, Disp8, disp as u32)
+        self.modrm_instr(
+            0x89,
+            Reg32(src),
+            BaseDisp8 {
+                base: dest,
+                disp: disp as u8,
+            },
+        )
     }
 
     /// mov %r32, [%r64 + i32]
     pub fn mov_reg32_ptr64_disp32(&mut self, dest: RegX64, src: RegX64, disp: i32) -> &mut Self {
-        self.modrm_instr(0x8b, Reg32(dest), src, None, Disp32, disp as u32)
+        self.modrm_instr(
+            0x8b,
+            Reg32(dest),
+            BaseDisp32 {
+                base: src,
+                disp: disp as u32,
+            },
+        )
     }
 
     /// mov [%r64 + i8], %r32
     pub fn mov_ptr64_reg32_disp32(&mut self, dest: RegX64, src: RegX64, disp: i32) -> &mut Self {
-        self.modrm_instr(0x89, Reg32(src), dest, None, Disp32, disp as u32)
+        self.modrm_instr(
+            0x89,
+            Reg32(src),
+            BaseDisp32 {
+                base: dest,
+                disp: disp as u32,
+            },
+        )
     }
 
     /// mov %r32, [%r64 + scale * %r64]
@@ -251,7 +363,15 @@ impl EmitterX64 {
         scale: u8,
         ind: RegX64,
     ) -> &mut Self {
-        self.modrm_instr(0x8b, Reg32(dest), base, Some((ind, scale)), NoDisp, 0)
+        self.modrm_instr(
+            0x8b,
+            Reg32(dest),
+            SIBNoDisp {
+                base,
+                scale,
+                index: ind,
+            },
+        )
     }
 
     /// mov %r32, [%r64 + scale * %r64 + i32]
@@ -266,10 +386,12 @@ impl EmitterX64 {
         self.modrm_instr(
             0x8b,
             Reg32(dest),
-            base,
-            Some((ind, scale)),
-            Disp32,
-            disp as u32,
+            SIBDisp32 {
+                base,
+                scale,
+                index: ind,
+                disp: disp as u32,
+            },
         )
     }
 

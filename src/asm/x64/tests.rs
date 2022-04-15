@@ -76,15 +76,15 @@ fn test_mov_reg64_reg64() {
 #[test]
 fn test_mov_reg32_ptr64() {
     let mut code = EmitterX64::new();
-    code.mov_reg_ptr(Reg32(R8), RBP)
-        .mov_reg_ptr(Reg32(R15), RSI)
-        .mov_reg_ptr(Reg32(RDI), RBX)
-        .mov_reg_ptr(Reg32(RAX), RAX)
-        .mov_reg_ptr(Reg32(R11), RCX)
-        .mov_reg_ptr(Reg32(RBP), RSP)
-        .mov_reg_ptr(Reg32(RCX), RDI)
-        .mov_reg_ptr(Reg32(R9), R12)
-        .mov_reg_ptr(Reg32(RAX), R13);
+    code.mov_reg_ptr(Reg32(R8), BaseNoDisp { base: RBP })
+        .mov_reg_ptr(Reg32(R15), BaseNoDisp { base: RSI })
+        .mov_reg_ptr(Reg32(RDI), BaseNoDisp { base: RBX })
+        .mov_reg_ptr(Reg32(RAX), BaseNoDisp { base: RAX })
+        .mov_reg_ptr(Reg32(R11), BaseNoDisp { base: RCX })
+        .mov_reg_ptr(Reg32(RBP), BaseNoDisp { base: RSP })
+        .mov_reg_ptr(Reg32(RCX), BaseNoDisp { base: RDI })
+        .mov_reg_ptr(Reg32(R9), BaseNoDisp { base: R12 })
+        .mov_reg_ptr(Reg32(RAX), BaseNoDisp { base: R13 });
     assert_eq!(
         code.buf,
         vec![
