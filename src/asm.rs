@@ -6,8 +6,9 @@ use std::mem;
 use super::ir::{Instr, Opcode::*, VReg};
 use alloc::{MappedReg::*, RegAllocation};
 use execbuffer::ExecBuffer;
-use x64::RegX64::*;
+
 use x64::*;
+use x64::{PtrOperand::*, RegOperand::*, RegX64::*};
 
 pub struct AssemblerX64 {
     code: EmitterX64,
@@ -62,7 +63,7 @@ impl AssemblerX64 {
         }
         self.code
             .push_reg64(RBP)
-            .mov_reg64_reg64(RBP, RSP)
+            .mov_reg_reg(Reg64(RBP), Reg64(RSP))
             .sub_reg64_imm32(RSP, stack_size);
 
         for (i, mapping) in self.reg_alloc.mapping.iter().enumerate() {
@@ -71,13 +72,31 @@ impl AssemblerX64 {
 
             match mapping {
                 Phys(r) => {
-                    self.code.mov_reg32_ptr64_disp8(*r, RCX, vreg_disp as i8);
+                    self.code.mov_reg_ptr(
+                        Reg32(*r),
+                        BaseDisp8 {
+                            base: RCX,
+                            disp: vreg_disp as i8,
+                        },
+                    );
                 }
                 Spill(ri) => {
                     // Since prev base ptr is first on stack, add 1 to each index
                     self.code
-                        .mov_reg32_ptr64_disp8(RAX, RCX, vreg_disp as i8)
-                        .mov_ptr64_reg32_disp8(RBP, RAX, spill_stack_disp(*ri) as i8);
+                        .mov_reg_ptr(
+                            Reg32(RAX),
+                            BaseDisp8 {
+                                base: RCX,
+                                disp: vreg_disp as i8,
+                            },
+                        )
+                        .mov_ptr_reg(
+                            BaseDisp8 {
+                                base: RBP,
+                                disp: spill_stack_disp(*ri) as i8,
+                            },
+                            Reg32(RAX),
+                        );
                 }
                 Unmapped => (),
             };
@@ -92,43 +111,81 @@ impl AssemblerX64 {
             assert!(vreg_disp < (1 << 7));
             match mapping {
                 Phys(r) => {
-                    self.code.mov_ptr64_reg32_disp8(RCX, *r, vreg_disp as i8);
+                    self.code.mov_ptr_reg(
+                        BaseDisp8 {
+                            base: RCX,
+                            disp: vreg_disp as i8,
+                        },
+                        Reg32(*r),
+                    );
                 }
                 Spill(i) => {
                     self.code
-                        .mov_reg32_ptr64_disp8(RAX, RBP, spill_stack_disp(*i) as i8)
-                        .mov_ptr64_reg32_disp8(RCX, RAX, vreg_disp as i8);
+                        .mov_reg_ptr(
+                            Reg32(RAX),
+                            BaseDisp8 {
+                                base: RBP,
+                                disp: spill_stack_disp(*i) as i8,
+                            },
+                        )
+                        .mov_ptr_reg(
+                            BaseDisp8 {
+                                base: RCX,
+                                disp: vreg_disp as i8,
+                            },
+                            Reg32(RAX),
+                        );
                 }
                 _ => (),
             }
         }
-        self.code.mov_reg64_reg64(RSP, RBP).pop_reg64(RBP).ret();
+        self.code
+            .mov_reg_reg(Reg64(RSP), Reg64(RBP))
+            .pop_reg64(RBP)
+            .ret();
         self
     }
 
     pub fn emit(&mut self, instr: Instr) {
-        match instr.opcode {
-            MOVr(dest, src) => self.mov_reg(dest, src),
-            MOVi(dest, imm) => self.mov_imm(dest, imm),
-            _ => panic!(),
-        };
+        // match instr.opcode {
+        //     MOVr(dest, src) => self.mov_reg(dest, src),
+        //     MOVi(dest, imm) => self.mov_imm(dest, imm),
+        // };
     }
 
     fn mov_reg(&mut self, dest: VReg, src: VReg) -> &mut Self {
         match (self.reg_alloc.get(dest), self.reg_alloc.get(src)) {
-            (Phys(rd), Phys(rs)) => self.code.mov_reg32_reg32(rd, rs),
-            (Phys(rd), Spill(is)) => {
-                self.code
-                    .mov_reg32_ptr64_disp8(rd, RBP, spill_stack_disp(is) as i8)
-            }
-            (Spill(id), Phys(rs)) => {
-                self.code
-                    .mov_ptr64_reg32_disp8(RBP, rs, spill_stack_disp(id) as i8)
-            }
+            (Phys(rd), Phys(rs)) => self.code.mov_reg_reg(Reg32(rd), Reg32(rs)),
+            (Phys(rd), Spill(is)) => self.code.mov_reg_ptr(
+                Reg32(rd),
+                BaseDisp8 {
+                    base: RBP,
+                    disp: spill_stack_disp(is) as i8,
+                },
+            ),
+            (Spill(id), Phys(rs)) => self.code.mov_ptr_reg(
+                BaseDisp8 {
+                    base: RBP,
+                    disp: spill_stack_disp(id) as i8,
+                },
+                Reg32(rs),
+            ),
             (Spill(id), Spill(is)) => self
                 .code
-                .mov_reg32_ptr64_disp8(RAX, RBP, spill_stack_disp(is) as i8)
-                .mov_ptr64_reg32_disp8(RBP, RAX, spill_stack_disp(id) as i8),
+                .mov_reg_ptr(
+                    Reg32(RAX),
+                    BaseDisp8 {
+                        base: RBP,
+                        disp: spill_stack_disp(is) as i8,
+                    },
+                )
+                .mov_ptr_reg(
+                    BaseDisp8 {
+                        base: RBP,
+                        disp: spill_stack_disp(id) as i8,
+                    },
+                    Reg32(RAX),
+                ),
             _ => panic!(),
         };
         self
@@ -151,14 +208,32 @@ impl AssemblerX64 {
         match self.reg_alloc.get(dest) {
             // TODO are unsigned to signed offset conversions going to be a problem?
             Phys(r) => {
-                self.code.mov_reg32_ptr64_disp32(r, RDX, addr as i32);
+                self.code.mov_reg_ptr(
+                    Reg32(r),
+                    BaseDisp32 {
+                        base: RDX,
+                        disp: addr as i32,
+                    },
+                );
             }
             Spill(i) => {
                 // TODO - assuming here we can't spill past size of i8, i.e. 127 bytes. Should have
                 // a check for that at some point (or stop using i8s)
                 self.code
-                    .mov_reg32_ptr64_disp32(RAX, RDX, addr as i32)
-                    .mov_ptr64_reg32_disp32(RBP, RAX, spill_stack_disp(i) as i32);
+                    .mov_reg_ptr(
+                        Reg32(RAX),
+                        BaseDisp32 {
+                            base: RDX,
+                            disp: addr as i32,
+                        },
+                    )
+                    .mov_ptr_reg(
+                        BaseDisp32 {
+                            base: RBP,
+                            disp: spill_stack_disp(i) as i32,
+                        },
+                        Reg32(RAX),
+                    );
             }
             Unmapped => panic!(),
         };
@@ -169,23 +244,79 @@ impl AssemblerX64 {
     fn ldr_rel_imm(&mut self, dest: VReg, ptr: VReg, offset: i32) -> &mut Self {
         match (self.reg_alloc.get(dest), self.reg_alloc.get(ptr)) {
             (Phys(rd), Phys(rs)) => {
-                self.code.mov_reg32_ptr64_sib_disp32(rd, RDX, 1, rs, offset);
+                self.code.mov_reg_ptr(
+                    Reg32(rd),
+                    SIBDisp32 {
+                        base: RDX,
+                        scale: 1,
+                        index: rs,
+                        disp: offset,
+                    },
+                );
             }
             (Phys(rd), Spill(is)) => {
                 self.code
-                    .mov_reg32_ptr64_disp8(RAX, RBP, spill_stack_disp(is) as i8)
-                    .mov_reg32_ptr64_sib_disp32(rd, RDX, 1, RAX, offset);
+                    .mov_reg_ptr(
+                        Reg32(RAX),
+                        BaseDisp8 {
+                            base: RBP,
+                            disp: spill_stack_disp(is) as i8,
+                        },
+                    )
+                    .mov_reg_ptr(
+                        Reg32(rd),
+                        SIBDisp32 {
+                            base: RDX,
+                            scale: 1,
+                            index: RAX,
+                            disp: offset,
+                        },
+                    );
             }
             (Spill(id), Phys(rs)) => {
                 self.code
-                    .mov_reg32_ptr64_sib_disp32(RAX, RDX, 1, rs, offset)
-                    .mov_ptr64_reg32_disp8(RBP, RAX, spill_stack_disp(id) as i8);
+                    .mov_reg_ptr(
+                        Reg32(RAX),
+                        SIBDisp32 {
+                            base: RDX,
+                            scale: 1,
+                            index: rs,
+                            disp: offset,
+                        },
+                    )
+                    .mov_ptr_reg(
+                        BaseDisp8 {
+                            base: RBP,
+                            disp: spill_stack_disp(id) as i8,
+                        },
+                        Reg32(RAX),
+                    );
             }
             (Spill(id), Spill(is)) => {
                 self.code
-                    .mov_reg32_ptr64_disp8(RAX, RBP, spill_stack_disp(is) as i8)
-                    .mov_reg32_ptr64_sib_disp32(RAX, RDX, 1, RAX, offset)
-                    .mov_ptr64_reg32_disp8(RBP, RAX, spill_stack_disp(id) as i8);
+                    .mov_reg_ptr(
+                        Reg32(RAX),
+                        BaseDisp8 {
+                            base: RBP,
+                            disp: spill_stack_disp(is) as i8,
+                        },
+                    )
+                    .mov_reg_ptr(
+                        Reg32(RAX),
+                        SIBDisp32 {
+                            base: RDX,
+                            scale: 1,
+                            index: RAX,
+                            disp: offset,
+                        },
+                    )
+                    .mov_ptr_reg(
+                        BaseDisp8 {
+                            base: RBP,
+                            disp: spill_stack_disp(id) as i8,
+                        },
+                        Reg32(RAX),
+                    );
             }
             _ => panic!(),
         };
@@ -195,10 +326,14 @@ impl AssemblerX64 {
     /// Load value to register from address in pointer register plus index register
     fn ldr_rel_ind_imm(&mut self, dest: VReg, ptr: VReg, ind: VReg, offset: i32) -> &mut Self {
         match self.reg_alloc.get(ptr) {
-            Phys(r) => self.code.mov_reg32_reg32(RAX, r),
-            Spill(i) => self
-                .code
-                .mov_reg32_ptr64_disp8(RAX, RBP, spill_stack_disp(i) as i8),
+            Phys(r) => self.code.mov_reg_reg(Reg32(RAX), Reg32(r)),
+            Spill(i) => self.code.mov_reg_ptr(
+                Reg32(RAX),
+                BaseDisp8 {
+                    base: RBP,
+                    disp: spill_stack_disp(i) as i8,
+                },
+            ),
             Unmapped => panic!(),
         };
         match self.reg_alloc.get(ind) {
@@ -211,21 +346,55 @@ impl AssemblerX64 {
         match self.reg_alloc.get(dest) {
             Phys(r) => {
                 if offset == 0 {
-                    self.code.mov_reg32_ptr64_sib(r, RDX, 1, RAX);
+                    self.code.mov_reg_ptr(
+                        Reg32(r),
+                        SIBNoDisp {
+                            base: RDX,
+                            scale: 1,
+                            index: RAX,
+                        },
+                    );
                 } else {
                     // Does this exist?
-                    self.code.mov_reg32_ptr64_sib_disp32(r, RDX, 1, RAX, offset);
+                    self.code.mov_reg_ptr(
+                        Reg32(r),
+                        SIBDisp32 {
+                            base: RDX,
+                            scale: 1,
+                            index: RAX,
+                            disp: offset,
+                        },
+                    );
                 }
             }
             Spill(i) => {
                 if offset == 0 {
-                    self.code.mov_reg32_ptr64_sib(RAX, RDX, 1, RAX);
+                    self.code.mov_reg_ptr(
+                        Reg32(RAX),
+                        SIBNoDisp {
+                            base: RDX,
+                            scale: 1,
+                            index: RAX,
+                        },
+                    );
                 } else {
-                    self.code
-                        .mov_reg32_ptr64_sib_disp32(RAX, RDX, 1, RAX, offset);
+                    self.code.mov_reg_ptr(
+                        Reg32(RAX),
+                        SIBDisp32 {
+                            base: RDX,
+                            scale: 1,
+                            index: RAX,
+                            disp: offset,
+                        },
+                    );
                 }
-                self.code
-                    .mov_ptr64_reg32_disp8(RBP, RAX, spill_stack_disp(i) as i8);
+                self.code.mov_ptr_reg(
+                    BaseDisp8 {
+                        base: RBP,
+                        disp: spill_stack_disp(i) as i8,
+                    },
+                    Reg32(RAX),
+                );
             }
             Unmapped => panic!(),
         };

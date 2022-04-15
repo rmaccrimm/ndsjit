@@ -72,11 +72,11 @@ pub enum PtrOperand {
     },
     BaseDisp8 {
         base: RegX64,
-        disp: u8,
+        disp: i8,
     },
     BaseDisp32 {
         base: RegX64,
-        disp: u32,
+        disp: i32,
     },
     SIBNoDisp {
         base: RegX64,
@@ -87,13 +87,13 @@ pub enum PtrOperand {
         base: RegX64,
         index: RegX64,
         scale: u8,
-        disp: u8,
+        disp: i8,
     },
     SIBDisp32 {
         base: RegX64,
         index: RegX64,
         scale: u8,
-        disp: u32,
+        disp: i32,
     },
     /// Not really a pointer, but encoded the same way.
     /// Indicates the register value is being used directly
@@ -245,7 +245,8 @@ impl EmitterX64 {
                 assert!(index != RegX64::RSP);
                 self.buf
                     .push(mod_rm_byte(ptr.op_mod(), reg.unwrap() as u8, SIB_RM));
-                self.buf.push(sib_byte(scale, index as u8, base as u8));
+                self.buf
+                    .push(sib_byte(scale as u8, index as u8, base as u8));
             }
         }
         // Displacements
@@ -266,14 +267,7 @@ impl EmitterX64 {
 
     /// add %r32, [%r64 + i8]
     pub fn add_reg32_ptr64_disp8(&mut self, dest: RegX64, src: RegX64, disp: i8) -> &mut Self {
-        self.modrm_instr(
-            0x03,
-            Reg32(dest),
-            BaseDisp8 {
-                base: src,
-                disp: disp as u8,
-            },
-        )
+        self.modrm_instr(0x03, Reg32(dest), BaseDisp8 { base: src, disp })
     }
 
     /// call %r64
@@ -283,17 +277,18 @@ impl EmitterX64 {
         self
     }
 
-    /// mov %r64, %r64
-    pub fn mov_reg64_reg64(&mut self, dest: RegX64, src: RegX64) -> &mut Self {
-        self.modrm_instr(0x89, Reg64(src), RegValue { base: dest })
+    pub fn mov_reg_reg(&mut self, dest: RegOperand, src: RegOperand) -> &mut Self {
+        // Passing a PtrOperand just seems a little wonky, so translate it here
+        let dest = RegValue {
+            base: dest.unwrap(),
+        };
+        if src.is_reg8() {
+            self.modrm_instr(0x88, src, dest)
+        } else {
+            self.modrm_instr(0x89, src, dest)
+        }
     }
 
-    /// mov %r32, %r32
-    pub fn mov_reg32_reg32(&mut self, dest: RegX64, src: RegX64) -> &mut Self {
-        self.modrm_instr(0x89, Reg32(src), RegValue { base: dest })
-    }
-
-    /// mov %r32, [%r64]
     pub fn mov_reg_ptr(&mut self, dest: RegOperand, src: PtrOperand) -> &mut Self {
         if dest.is_reg8() {
             self.modrm_instr(0x8a, dest, src)
@@ -302,97 +297,12 @@ impl EmitterX64 {
         }
     }
 
-    /// mov [%r64], %r32
-    pub fn mov_ptr64_reg32(&mut self, dest: RegX64, src: RegX64) -> &mut Self {
-        self.modrm_instr(0x89, Reg32(src), BaseNoDisp { base: dest })
-    }
-
-    /// mov %r32, [%r64 + i8]
-    pub fn mov_reg32_ptr64_disp8(&mut self, dest: RegX64, src: RegX64, disp: i8) -> &mut Self {
-        self.modrm_instr(
-            0x8b,
-            Reg32(dest),
-            BaseDisp8 {
-                base: src,
-                disp: disp as u8,
-            },
-        )
-    }
-
-    /// mov [%r64 + i8], %r32
-    pub fn mov_ptr64_reg32_disp8(&mut self, dest: RegX64, src: RegX64, disp: i8) -> &mut Self {
-        self.modrm_instr(
-            0x89,
-            Reg32(src),
-            BaseDisp8 {
-                base: dest,
-                disp: disp as u8,
-            },
-        )
-    }
-
-    /// mov %r32, [%r64 + i32]
-    pub fn mov_reg32_ptr64_disp32(&mut self, dest: RegX64, src: RegX64, disp: i32) -> &mut Self {
-        self.modrm_instr(
-            0x8b,
-            Reg32(dest),
-            BaseDisp32 {
-                base: src,
-                disp: disp as u32,
-            },
-        )
-    }
-
-    /// mov [%r64 + i8], %r32
-    pub fn mov_ptr64_reg32_disp32(&mut self, dest: RegX64, src: RegX64, disp: i32) -> &mut Self {
-        self.modrm_instr(
-            0x89,
-            Reg32(src),
-            BaseDisp32 {
-                base: dest,
-                disp: disp as u32,
-            },
-        )
-    }
-
-    /// mov %r32, [%r64 + scale * %r64]
-    pub fn mov_reg32_ptr64_sib(
-        &mut self,
-        dest: RegX64,
-        base: RegX64,
-        scale: u8,
-        ind: RegX64,
-    ) -> &mut Self {
-        self.modrm_instr(
-            0x8b,
-            Reg32(dest),
-            SIBNoDisp {
-                base,
-                scale,
-                index: ind,
-            },
-        )
-    }
-
-    /// mov %r32, [%r64 + scale * %r64 + i32]
-    pub fn mov_reg32_ptr64_sib_disp32(
-        &mut self,
-        dest: RegX64,
-        base: RegX64,
-        scale: u8,
-        ind: RegX64,
-        disp: i32,
-    ) -> &mut Self {
-        self.modrm_instr(
-            0x8b,
-            Reg32(dest),
-            SIBDisp32 {
-                base,
-                scale,
-                index: ind,
-                disp: disp as u32,
-            },
-        )
+    pub fn mov_ptr_reg(&mut self, dest: PtrOperand, src: RegOperand) -> &mut Self {
+        if src.is_reg8() {
+            self.modrm_instr(0x88, src, dest)
+        } else {
+            self.modrm_instr(0x89, src, dest)
+        }
     }
 
     /// mov %r64, i32

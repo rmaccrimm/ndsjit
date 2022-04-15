@@ -60,37 +60,37 @@ pub enum Address {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Opcode {
-    MOVi(VReg, i16),
-    MOVr(VReg, VReg),
-    PUSH(VReg),
-    POP(VReg),
-    STR(Address, VReg, Option<WriteBack>),
+    // MOVi(VReg, i16),
+    // MOVr(VReg, VReg),
+    // PUSH(VReg),
+    // POP(VReg),
+    // STR(Address, VReg, Option<WriteBack>),
     LDR(VReg, Address, Option<WriteBack>),
-    STRB(Address, VReg, Option<WriteBack>),
+    // STRB(Address, VReg, Option<WriteBack>),
     LDRB(VReg, Address, Option<WriteBack>),
-    STRH(Address, VReg, Option<WriteBack>),
+    // STRH(Address, VReg, Option<WriteBack>),
     LDRH(VReg, Address, Option<WriteBack>),
     LDRSB(VReg, Address, Option<WriteBack>),
     LDRSH(VReg, Address, Option<WriteBack>),
 }
-use Opcode::*;
+// use Opcode::*;
 
-pub trait RegOps {
-    fn vreg_ops(self) -> (Option<VReg>, Option<VReg>, Option<VReg>);
-}
+// pub trait RegOps {
+//     fn vreg_ops(self) -> (Option<VReg>, Option<VReg>, Option<VReg>);
+// }
 
-impl RegOps for Opcode {
-    /// Get registers operands (if present) of an instruction
-    fn vreg_ops(self) -> (Option<VReg>, Option<VReg>, Option<VReg>) {
-        match self {
-            MOVi(r, _) => (Some(r), None, None),
-            MOVr(rd, rs) => (Some(rd), Some(rs), None),
-            PUSH(r) => (Some(r), None, None),
-            POP(r) => (Some(r), None, None),
-            _ => (None, None, None),
-        }
-    }
-}
+// impl RegOps for Opcode {
+//     /// Get registers operands (if present) of an instruction
+//     fn vreg_ops(self) -> (Option<VReg>, Option<VReg>, Option<VReg>) {
+//         match self {
+//             MOVi(r, _) => (Some(r), None, None),
+//             MOVr(rd, rs) => (Some(rd), Some(rs), None),
+//             PUSH(r) => (Some(r), None, None),
+//             POP(r) => (Some(r), None, None),
+//             _ => (None, None, None),
+//         }
+//     }
+// }
 
 pub struct Instr {
     pub opcode: Opcode,

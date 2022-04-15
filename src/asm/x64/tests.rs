@@ -42,9 +42,9 @@ fn test_add_reg32_ptr64_disp8() {
 #[test]
 fn test_mov_reg32_reg32() {
     let mut code = EmitterX64::new();
-    code.mov_reg32_reg32(RAX, R15)
-        .mov_reg32_reg32(RSP, RBP)
-        .mov_reg32_reg32(RBX, R9);
+    code.mov_reg_reg(Reg32(RAX), Reg32(R15))
+        .mov_reg_reg(Reg32(RSP), Reg32(RBP))
+        .mov_reg_reg(Reg32(RBX), Reg32(R9));
     assert_eq!(
         code.buf,
         vec![
@@ -58,10 +58,10 @@ fn test_mov_reg32_reg32() {
 #[test]
 fn test_mov_reg64_reg64() {
     let mut code = EmitterX64::new();
-    code.mov_reg64_reg64(RBX, RDX)
-        .mov_reg64_reg64(RDX, RBP)
-        .mov_reg64_reg64(R9, RSP)
-        .mov_reg64_reg64(RCX, R12);
+    code.mov_reg_reg(Reg64(RBX), Reg64(RDX))
+        .mov_reg_reg(Reg64(RDX), Reg64(RBP))
+        .mov_reg_reg(Reg64(R9), Reg64(RSP))
+        .mov_reg_reg(Reg64(RCX), Reg64(R12));
     assert_eq!(
         code.buf,
         vec![
@@ -104,10 +104,10 @@ fn test_mov_reg32_ptr64() {
 #[test]
 fn test_mov_ptr64_reg32() {
     let mut code = EmitterX64::new();
-    code.mov_ptr64_reg32(RBP, RDI)
-        .mov_ptr64_reg32(RSP, RAX)
-        .mov_ptr64_reg32(R12, R15)
-        .mov_ptr64_reg32(R13, R13);
+    code.mov_ptr_reg(BaseNoDisp { base: RBP }, Reg32(RDI))
+        .mov_ptr_reg(BaseNoDisp { base: RSP }, Reg32(RAX))
+        .mov_ptr_reg(BaseNoDisp { base: R12 }, Reg32(R15))
+        .mov_ptr_reg(BaseNoDisp { base: R13 }, Reg32(R13));
     assert_eq!(
         code.buf,
         vec![
@@ -120,14 +120,15 @@ fn test_mov_ptr64_reg32() {
 }
 
 #[test]
+#[rustfmt::skip]
 fn test_mov_reg32_ptr64_disp8() {
     let mut code = EmitterX64::new();
-    code.mov_reg32_ptr64_disp8(R8, RBP, 127)
-        .mov_reg32_ptr64_disp8(R9, RSP, 10)
-        .mov_reg32_ptr64_disp8(R10, R12, 99)
-        .mov_reg32_ptr64_disp8(R11, R13, -45)
-        .mov_reg32_ptr64_disp8(RCX, R15, 109)
-        .mov_reg32_ptr64_disp8(RBX, RAX, 12);
+    code.mov_reg_ptr(Reg32(R8), BaseDisp8{base: RBP, disp: 127})
+        .mov_reg_ptr(Reg32(R9), BaseDisp8{base: RSP, disp: 10})
+        .mov_reg_ptr(Reg32(R10), BaseDisp8{base: R12, disp: 99})
+        .mov_reg_ptr(Reg32(R11), BaseDisp8{base: R13, disp: -45})
+        .mov_reg_ptr(Reg32(RCX), BaseDisp8{base: R15, disp: 109})
+        .mov_reg_ptr(Reg32(RBX), BaseDisp8{base: RAX, disp: 12});
     assert_eq!(
         code.buf,
         vec![
@@ -142,13 +143,14 @@ fn test_mov_reg32_ptr64_disp8() {
 }
 
 #[test]
+#[rustfmt::skip]
 fn test_mov_ptr64_reg32_disp8() {
     let mut code = EmitterX64::new();
-    code.mov_ptr64_reg32_disp8(RBP, RAX, -78)
-        .mov_ptr64_reg32_disp8(RSP, RBX, 10)
-        .mov_ptr64_reg32_disp8(R12, RCX, -3)
-        .mov_ptr64_reg32_disp8(R13, R15, 44)
-        .mov_ptr64_reg32_disp8(RDI, RSI, -1);
+    code.mov_ptr_reg(BaseDisp8{base: RBP, disp: -78}, Reg32(RAX))
+        .mov_ptr_reg(BaseDisp8{base: RSP, disp: 10}, Reg32(RBX))
+        .mov_ptr_reg(BaseDisp8{base: R12, disp: -3}, Reg32(RCX))
+        .mov_ptr_reg(BaseDisp8{base: R13, disp: 44}, Reg32(R15))
+        .mov_ptr_reg(BaseDisp8{base: RDI, disp: -1}, Reg32(RSI));
     assert_eq!(
         code.buf,
         vec![
@@ -162,12 +164,13 @@ fn test_mov_ptr64_reg32_disp8() {
 }
 
 #[test]
+#[rustfmt::skip]
 fn test_mov_reg32_ptr64_disp32() {
     let mut code = EmitterX64::new();
-    code.mov_reg32_ptr64_disp32(RBX, RSP, 16000)
-        .mov_reg32_ptr64_disp32(RSP, RBP, 453)
-        .mov_reg32_ptr64_disp32(R14, R12, -883)
-        .mov_reg32_ptr64_disp32(RSI, R13, -10000);
+    code.mov_reg_ptr(Reg32(RBX), BaseDisp32{base: RSP, disp: 16000})
+        .mov_reg_ptr(Reg32(RSP), BaseDisp32{base: RBP, disp: 453})
+        .mov_reg_ptr(Reg32(R14), BaseDisp32{base: R12, disp: -883})
+        .mov_reg_ptr(Reg32(RSI), BaseDisp32{base: R13, disp: -10000});
     assert_eq!(
         code.buf,
         vec![
@@ -180,12 +183,13 @@ fn test_mov_reg32_ptr64_disp32() {
 }
 
 #[test]
+#[rustfmt::skip]
 fn test_mov_ptr64_reg32_disp32() {
     let mut code = EmitterX64::new();
-    code.mov_ptr64_reg32_disp32(RSP, R11, 16000)
-        .mov_ptr64_reg32_disp32(RBP, RAX, 453)
-        .mov_ptr64_reg32_disp32(R12, RDI, -883)
-        .mov_ptr64_reg32_disp32(R13, RCX, -10000);
+    code.mov_ptr_reg(BaseDisp32{base: RSP, disp: 16000}, Reg32(R11))
+        .mov_ptr_reg(BaseDisp32{base: RBP, disp: 453}, Reg32(RAX))
+        .mov_ptr_reg(BaseDisp32{base: R12, disp: -883}, Reg32(RDI))
+        .mov_ptr_reg(BaseDisp32{base: R13, disp: -10000}, Reg32(RCX));
     assert_eq!(
         code.buf,
         vec![
@@ -266,14 +270,15 @@ fn test_mov_ptr64_imm32_disp8() {
 }
 
 #[test]
+#[rustfmt::skip]
 fn test_mov_reg32_ptr64_sib_disp32() {
     let mut code = EmitterX64::new();
-    code.mov_reg32_ptr64_sib_disp32(RCX, RBX, 2, RAX, 128)
-        .mov_reg32_ptr64_sib_disp32(RSI, RBP, 4, RBP, -454)
-        .mov_reg32_ptr64_sib_disp32(R12, RSP, 8, R13, 209384)
-        .mov_reg32_ptr64_sib_disp32(RAX, RDI, 1, R12, -943949)
-        .mov_reg32_ptr64_sib_disp32(RSP, R13, 1, R8, -129)
-        .mov_reg32_ptr64_sib_disp32(R15, R12, 1, RBX, 349999);
+    code.mov_reg_ptr(Reg32(RCX), SIBDisp32{base: RBX, scale: 2, index: RAX, disp: 128})
+        .mov_reg_ptr(Reg32(RSI), SIBDisp32{base: RBP, scale: 4, index: RBP, disp: -454})
+        .mov_reg_ptr(Reg32(R12), SIBDisp32{base: RSP, scale: 8, index: R13, disp: 209384})
+        .mov_reg_ptr(Reg32(RAX), SIBDisp32{base: RDI, scale: 1, index: R12, disp: -943949})
+        .mov_reg_ptr(Reg32(RSP), SIBDisp32{base: R13, scale: 1, index: R8, disp: -129})
+        .mov_reg_ptr(Reg32(R15), SIBDisp32{base: R12, scale: 1, index: RBX, disp: 349999});
     assert_eq!(
         code.buf,
         vec![
@@ -289,20 +294,22 @@ fn test_mov_reg32_ptr64_sib_disp32() {
 
 #[test]
 #[should_panic]
+#[rustfmt::skip]
 fn test_mov_reg32_ptr64_sib_disp32_sp_index() {
     let mut code = EmitterX64::new();
-    code.mov_reg32_ptr64_sib_disp32(RCX, RBX, 2, RSP, 128);
+    code.mov_reg_ptr(Reg32(RCX), SIBDisp32{base: RBX, scale: 2, index: RSP, disp: 128});
 }
 
 #[test]
+#[rustfmt::skip]
 fn test_mov_reg32_ptr64_sib() {
     let mut code = EmitterX64::new();
-    code.mov_reg32_ptr64_sib(RCX, RBX, 2, RAX)
-        .mov_reg32_ptr64_sib(RSI, RBP, 4, RBP)
-        .mov_reg32_ptr64_sib(R12, RSP, 8, R13)
-        .mov_reg32_ptr64_sib(RAX, RDI, 1, R12)
-        .mov_reg32_ptr64_sib(RSP, R13, 1, R8)
-        .mov_reg32_ptr64_sib(R15, R12, 1, RBX);
+    code.mov_reg_ptr(Reg32(RCX), SIBNoDisp{base: RBX, scale: 2, index: RAX})
+        .mov_reg_ptr(Reg32(RSI), SIBNoDisp{base: RBP, scale: 4, index: RBP})
+        .mov_reg_ptr(Reg32(R12), SIBNoDisp{base: RSP, scale: 8, index: R13})
+        .mov_reg_ptr(Reg32(RAX), SIBNoDisp{base: RDI, scale: 1, index: R12})
+        .mov_reg_ptr(Reg32(RSP), SIBNoDisp{base: R13, scale: 1, index: R8})
+        .mov_reg_ptr(Reg32(R15), SIBNoDisp{base: R12, scale: 1, index: RBX});
     assert_eq!(
         code.buf,
         vec![
