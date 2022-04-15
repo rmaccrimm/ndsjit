@@ -1,3 +1,4 @@
+use std::mem;
 use std::vec::Vec;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -278,6 +279,7 @@ impl EmitterX64 {
     }
 
     pub fn mov_reg_reg(&mut self, dest: RegOperand, src: RegOperand) -> &mut Self {
+        assert_eq!(mem::discriminant(&dest), mem::discriminant(&src));
         // Passing a PtrOperand just seems a little wonky, so translate it here
         let dest = RegValue {
             base: dest.unwrap(),

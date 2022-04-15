@@ -74,6 +74,13 @@ fn test_mov_reg64_reg64() {
 }
 
 #[test]
+#[should_panic]
+fn test_mov_reg_different_sizes() {
+    let mut code = EmitterX64::new();
+    code.mov_reg_reg(Reg32(RAX), Reg64(R12));
+}
+
+#[test]
 fn test_mov_reg32_ptr64() {
     let mut code = EmitterX64::new();
     code.mov_reg_ptr(Reg32(R8), BaseNoDisp { base: RBP })
