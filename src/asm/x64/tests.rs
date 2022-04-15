@@ -4,10 +4,10 @@ use super::*;
 #[test]
 fn test_add_reg32_reg32() {
     let mut code = EmitterX64::new();
-    code.add_reg32_reg32(RBX, RBP)
-        .add_reg32_reg32(RAX, R15)
-        .add_reg32_reg32(R11, RSI)
-        .add_reg32_reg32(R8, R9);
+    code.add_reg_reg(Reg32(RBX), Reg32(RBP))
+        .add_reg_reg(Reg32(RAX), Reg32(R15))
+        .add_reg_reg(Reg32(R11), Reg32(RSI))
+        .add_reg_reg(Reg32(R8), Reg32(R9));
     assert_eq!(
         code.buf,
         vec![
@@ -20,13 +20,14 @@ fn test_add_reg32_reg32() {
 }
 
 #[test]
+#[rustfmt::skip]
 fn test_add_reg32_ptr64_disp8() {
     let mut code = EmitterX64::new();
-    code.add_reg32_ptr64_disp8(RBX, RBP, 12)
-        .add_reg32_ptr64_disp8(RAX, R12, -128)
-        .add_reg32_ptr64_disp8(R11, RSP, 90)
-        .add_reg32_ptr64_disp8(R8, R13, 127)
-        .add_reg32_ptr64_disp8(RDX, RCX, 70);
+    code.add_reg_ptr(Reg32(RBX), BaseDisp8{ base: RBP, disp:  12 })
+        .add_reg_ptr(Reg32(RAX), BaseDisp8{ base: R12, disp: -128 })
+        .add_reg_ptr(Reg32(R11), BaseDisp8{ base: RSP, disp:  90 })
+        .add_reg_ptr(Reg32(R8), BaseDisp8{ base: R13, disp:  127 })
+        .add_reg_ptr(Reg32(RDX), BaseDisp8{ base: RCX, disp:  70 });
     assert_eq!(
         code.buf,
         vec![

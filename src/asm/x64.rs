@@ -161,6 +161,7 @@ fn rex_prefix(w: bool, reg: u8, rm_or_base: u8, index: u8) -> u8 {
 /// used. It also indicates no index when used as the index field of the SIB byte
 const SIB_RM: u8 = 0b100;
 
+/// 16-bit override prefix
 const PREF_16B: u8 = 0x66;
 
 /// ModR/M byte which encodes an addressing mode, and the 3 lsb of a register operand (reg) and
@@ -261,14 +262,24 @@ impl EmitterX64 {
         self
     }
 
-    /// add %r32>, %r32>
-    pub fn add_reg32_reg32(&mut self, dest: RegX64, src: RegX64) -> &mut Self {
-        self.modrm_instr(0x01, Reg32(src), RegValue { base: dest })
+    pub fn add_reg_reg(&mut self, dest: RegOperand, src: RegOperand) -> &mut Self {
+        assert_eq!(mem::discriminant(&dest), mem::discriminant(&src));
+        let dest = RegValue {
+            base: dest.unwrap(),
+        };
+        if src.is_reg8() {
+            self.modrm_instr(0x00, src, dest)
+        } else {
+            self.modrm_instr(0x01, src, dest)
+        }
     }
 
-    /// add %r32, [%r64 + i8]
-    pub fn add_reg32_ptr64_disp8(&mut self, dest: RegX64, src: RegX64, disp: i8) -> &mut Self {
-        self.modrm_instr(0x03, Reg32(dest), BaseDisp8 { base: src, disp })
+    pub fn add_reg_ptr(&mut self, dest: RegOperand, src: PtrOperand) -> &mut Self {
+        if dest.is_reg8() {
+            self.modrm_instr(0x02, dest, src)
+        } else {
+            self.modrm_instr(0x03, dest, src)
+        }
     }
 
     /// call %r64
@@ -280,7 +291,6 @@ impl EmitterX64 {
 
     pub fn mov_reg_reg(&mut self, dest: RegOperand, src: RegOperand) -> &mut Self {
         assert_eq!(mem::discriminant(&dest), mem::discriminant(&src));
-        // Passing a PtrOperand just seems a little wonky, so translate it here
         let dest = RegValue {
             base: dest.unwrap(),
         };

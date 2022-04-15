@@ -337,10 +337,14 @@ impl AssemblerX64 {
             Unmapped => panic!(),
         };
         match self.reg_alloc.get(ind) {
-            Phys(r) => self.code.add_reg32_reg32(RAX, r),
-            Spill(i) => self
-                .code
-                .add_reg32_ptr64_disp8(RAX, RBP, spill_stack_disp(i) as i8),
+            Phys(r) => self.code.add_reg_reg(Reg32(RAX), Reg32(r)),
+            Spill(i) => self.code.add_reg_ptr(
+                Reg32(RAX),
+                BaseDisp8 {
+                    base: RBP,
+                    disp: spill_stack_disp(i) as i8,
+                },
+            ),
             Unmapped => panic!(),
         };
         match self.reg_alloc.get(dest) {
