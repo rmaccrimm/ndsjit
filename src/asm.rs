@@ -1,6 +1,7 @@
 pub mod alloc;
 mod execbuffer;
 mod x64;
+mod x64_ref;
 use std::mem;
 
 use super::ir::{Instr, Opcode::*, VReg};
