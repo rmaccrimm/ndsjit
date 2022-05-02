@@ -72,7 +72,7 @@ pub struct Address {
 }
 
 impl Address {
-    pub fn displacement(base: RegX64, displacement: i32) -> Address {
+    pub fn disp(base: RegX64, displacement: i32) -> Address {
         Address {
             base,
             op_mod: Mod::from_disp(displacement),
@@ -184,13 +184,6 @@ impl EmitterX64 {
         };
         self
     }
-
-    // pub fn mov_reg_imm64(&mut self, dest: RegX64, imm: i64) -> &mut Self {
-    //     self.buf
-    //         .extend_from_slice(&[rex_prefix(true, dest.value(), 0, 0), 0xb8]);
-    //     self.buf.extend_from_slice(&imm.to_le_bytes());
-    //     self
-    // }
 
     pub fn mov_addr_imm32(&mut self, dest: Address, imm: i32) -> &mut Self {
         self.emit_modrm_addr(0xc7, RegX64::new(0, Quadword), dest);
@@ -382,11 +375,11 @@ mod tests {
 
     #[test]
     fn test_add_reg32_addr64_disp8() {
-        assert_emit_eq!(add_addr(EBX, Address::displacement(RBP, 12)), 0x03, 0x5D, 0x0C); // add ebx, [rbp+12]
-        assert_emit_eq!(add_addr(EAX, Address::displacement(R12, -128)), 0x41, 0x03, 0x44, 0x24, 0x80); // add eax, [r12-128]
-        assert_emit_eq!(add_addr(R11D, Address::displacement(RSP, 90)), 0x44, 0x03, 0x5C, 0x24, 0x5A); // add r11d, [rsp+90]
-        assert_emit_eq!(add_addr(R8D, Address::displacement(R13, 127)), 0x45, 0x03, 0x45, 0x7F); // add r8d,[r13+127]
-        assert_emit_eq!(add_addr(EDX, Address::displacement(RCX, 70)), 0x03, 0x51, 0x46); // add edx, [rcx+70]
+        assert_emit_eq!(add_addr(EBX, Address::disp(RBP, 12)), 0x03, 0x5D, 0x0C); // add ebx, [rbp+12]
+        assert_emit_eq!(add_addr(EAX, Address::disp(R12, -128)), 0x41, 0x03, 0x44, 0x24, 0x80); // add eax, [r12-128]
+        assert_emit_eq!(add_addr(R11D, Address::disp(RSP, 90)), 0x44, 0x03, 0x5C, 0x24, 0x5A); // add r11d, [rsp+90]
+        assert_emit_eq!(add_addr(R8D, Address::disp(R13, 127)), 0x45, 0x03, 0x45, 0x7F); // add r8d,[r13+127]
+        assert_emit_eq!(add_addr(EDX, Address::disp(RCX, 70)), 0x03, 0x51, 0x46); // add edx, [rcx+70]
     }
 
     #[test]
@@ -413,58 +406,58 @@ mod tests {
 
     #[test]
     fn test_mov_reg32_addr64() {
-        assert_emit_eq!(mov_reg_addr(R8D, Address::displacement(RBP, 0)), 0x44, 0x8B, 0x45, 0x00); // mov r8d, [rbp]
-        assert_emit_eq!(mov_reg_addr(R15D, Address::displacement(RSI, 0)), 0x44, 0x8B, 0x3E); // mov r15d, [rsi]
-        assert_emit_eq!(mov_reg_addr(EDI, Address::displacement(RBX, 0)), 0x8B, 0x3B); // mov edi, [rbx]
-        assert_emit_eq!(mov_reg_addr(EAX, Address::displacement(RAX, 0)), 0x8B, 0x00); // mov eax, [rax]
-        assert_emit_eq!(mov_reg_addr(R11D, Address::displacement(RCX, 0)), 0x44, 0x8B, 0x19); // mov r11d, [rcx]
-        assert_emit_eq!(mov_reg_addr(EBP, Address::displacement(RSP, 0)), 0x8B, 0x2C, 0x24); // mov ebp, [rsp]
-        assert_emit_eq!(mov_reg_addr(ECX, Address::displacement(RDI, 0)), 0x8B, 0x0F); // mov ecx, [rdi]
-        assert_emit_eq!(mov_reg_addr(R9D, Address::displacement(R12, 0)), 0x45, 0x8B, 0x0C, 0x24); // mov r9d, [r12]
-        assert_emit_eq!(mov_reg_addr(EAX, Address::displacement(R13, 0)), 0x41, 0x8B, 0x45, 0x00); // mov eax, [r13]
+        assert_emit_eq!(mov_reg_addr(R8D, Address::disp(RBP, 0)), 0x44, 0x8B, 0x45, 0x00); // mov r8d, [rbp]
+        assert_emit_eq!(mov_reg_addr(R15D, Address::disp(RSI, 0)), 0x44, 0x8B, 0x3E); // mov r15d, [rsi]
+        assert_emit_eq!(mov_reg_addr(EDI, Address::disp(RBX, 0)), 0x8B, 0x3B); // mov edi, [rbx]
+        assert_emit_eq!(mov_reg_addr(EAX, Address::disp(RAX, 0)), 0x8B, 0x00); // mov eax, [rax]
+        assert_emit_eq!(mov_reg_addr(R11D, Address::disp(RCX, 0)), 0x44, 0x8B, 0x19); // mov r11d, [rcx]
+        assert_emit_eq!(mov_reg_addr(EBP, Address::disp(RSP, 0)), 0x8B, 0x2C, 0x24); // mov ebp, [rsp]
+        assert_emit_eq!(mov_reg_addr(ECX, Address::disp(RDI, 0)), 0x8B, 0x0F); // mov ecx, [rdi]
+        assert_emit_eq!(mov_reg_addr(R9D, Address::disp(R12, 0)), 0x45, 0x8B, 0x0C, 0x24); // mov r9d, [r12]
+        assert_emit_eq!(mov_reg_addr(EAX, Address::disp(R13, 0)), 0x41, 0x8B, 0x45, 0x00); // mov eax, [r13]
     }
 
     #[test]
     fn test_mov_addr64_reg32() {
-        assert_emit_eq!(mov_addr_reg(Address::displacement(RBP, 0), EDI), 0x89, 0x7D, 0x00); // mov [rbp], edi
-        assert_emit_eq!(mov_addr_reg(Address::displacement(RSP, 0), EAX), 0x89, 0x04, 0x24); // mov [rsp], eax
-        assert_emit_eq!(mov_addr_reg(Address::displacement(R12, 0), R15D), 0x45, 0x89, 0x3C, 0x24); // mov [r12], r15d 
-        assert_emit_eq!(mov_addr_reg(Address::displacement(R13, 0), R13D), 0x45, 0x89, 0x6D, 0x00); // mov [r13], r13d
+        assert_emit_eq!(mov_addr_reg(Address::disp(RBP, 0), EDI), 0x89, 0x7D, 0x00); // mov [rbp], edi
+        assert_emit_eq!(mov_addr_reg(Address::disp(RSP, 0), EAX), 0x89, 0x04, 0x24); // mov [rsp], eax
+        assert_emit_eq!(mov_addr_reg(Address::disp(R12, 0), R15D), 0x45, 0x89, 0x3C, 0x24); // mov [r12], r15d 
+        assert_emit_eq!(mov_addr_reg(Address::disp(R13, 0), R13D), 0x45, 0x89, 0x6D, 0x00); // mov [r13], r13d
     }
 
     #[test]
     fn test_mov_reg32_addr64_disp8() {
-        assert_emit_eq!(mov_reg_addr(R8D, Address::displacement(RBP, 127)), 0x44, 0x8B, 0x45, 0x7F); // mov r8d,[rbp+127]
-        assert_emit_eq!(mov_reg_addr(R9D, Address::displacement(RSP, 10)), 0x44, 0x8B, 0x4C, 0x24, 0x0A); // mov r9d, [rsp+10]
-        assert_emit_eq!(mov_reg_addr(R10D, Address::displacement(R12, 99)), 0x45, 0x8B, 0x54, 0x24, 0x63); // mov r10d,[r12+99]
-        assert_emit_eq!(mov_reg_addr(R11D, Address::displacement(R13, -45)), 0x45, 0x8B, 0x5D, 0xD3); // mov r11d,[r13-45]
-        assert_emit_eq!(mov_reg_addr(ECX, Address::displacement(R15, 109)), 0x41, 0x8B, 0x4F, 0x6D); // mov ecx,[r15+109]
-        assert_emit_eq!(mov_reg_addr(EBX, Address::displacement(RAX, 12)), 0x8B, 0x58, 0x0C); // mov ebx,[rax+12]
+        assert_emit_eq!(mov_reg_addr(R8D, Address::disp(RBP, 127)), 0x44, 0x8B, 0x45, 0x7F); // mov r8d,[rbp+127]
+        assert_emit_eq!(mov_reg_addr(R9D, Address::disp(RSP, 10)), 0x44, 0x8B, 0x4C, 0x24, 0x0A); // mov r9d, [rsp+10]
+        assert_emit_eq!(mov_reg_addr(R10D, Address::disp(R12, 99)), 0x45, 0x8B, 0x54, 0x24, 0x63); // mov r10d,[r12+99]
+        assert_emit_eq!(mov_reg_addr(R11D, Address::disp(R13, -45)), 0x45, 0x8B, 0x5D, 0xD3); // mov r11d,[r13-45]
+        assert_emit_eq!(mov_reg_addr(ECX, Address::disp(R15, 109)), 0x41, 0x8B, 0x4F, 0x6D); // mov ecx,[r15+109]
+        assert_emit_eq!(mov_reg_addr(EBX, Address::disp(RAX, 12)), 0x8B, 0x58, 0x0C); // mov ebx,[rax+12]
     }
 
     #[test]
     fn test_mov_addr64_reg32_disp8() {
-        assert_emit_eq!(mov_addr_reg(Address::displacement(RBP, -78), EAX), 0x89, 0x45, 0xB2); // mov [rbp-78], eax
-        assert_emit_eq!(mov_addr_reg(Address::displacement(RSP, 10), EBX), 0x89, 0x5C, 0x24, 0x0A); // mov [rsp+10], ebx
-        assert_emit_eq!(mov_addr_reg(Address::displacement(R12, -3), ECX), 0x41, 0x89, 0x4C, 0x24, 0xFD); // mov [r12-3], ecx
-        assert_emit_eq!(mov_addr_reg(Address::displacement(R13, 44), R15D), 0x45, 0x89, 0x7D, 0x2C); // mov [r13+44],r15d
-        assert_emit_eq!(mov_addr_reg(Address::displacement(RDI, -1), ESI), 0x89, 0x77, 0xFF); // mov [rdi-1], esi
+        assert_emit_eq!(mov_addr_reg(Address::disp(RBP, -78), EAX), 0x89, 0x45, 0xB2); // mov [rbp-78], eax
+        assert_emit_eq!(mov_addr_reg(Address::disp(RSP, 10), EBX), 0x89, 0x5C, 0x24, 0x0A); // mov [rsp+10], ebx
+        assert_emit_eq!(mov_addr_reg(Address::disp(R12, -3), ECX), 0x41, 0x89, 0x4C, 0x24, 0xFD); // mov [r12-3], ecx
+        assert_emit_eq!(mov_addr_reg(Address::disp(R13, 44), R15D), 0x45, 0x89, 0x7D, 0x2C); // mov [r13+44],r15d
+        assert_emit_eq!(mov_addr_reg(Address::disp(RDI, -1), ESI), 0x89, 0x77, 0xFF); // mov [rdi-1], esi
     }
 
     #[test]
     fn test_mov_reg32_addr64_disp32() {
-        assert_emit_eq!(mov_reg_addr(EBX, Address::displacement(RSP, 16000)), 0x8B, 0x9C, 0x24, 0x80, 0x3E, 0x00, 0x00); // mov ebx, [rsp+16000]
-        assert_emit_eq!(mov_reg_addr(ESP, Address::displacement(RBP, 453)), 0x8B, 0xA5, 0xC5, 0x01, 0x00, 0x00); // mov esp, [rbp+453]
-        assert_emit_eq!(mov_reg_addr(R14D, Address::displacement(R12, -883)), 0x45, 0x8B, 0xB4, 0x24, 0x8D, 0xFC, 0xFF, 0xFF); // mov r14d, [r12-883]
-        assert_emit_eq!(mov_reg_addr(ESI, Address::displacement(R13, -10000)), 0x41, 0x8B, 0xB5, 0xF0, 0xD8, 0xFF, 0xFF); // mov esi, [r13-10000]
+        assert_emit_eq!(mov_reg_addr(EBX, Address::disp(RSP, 16000)), 0x8B, 0x9C, 0x24, 0x80, 0x3E, 0x00, 0x00); // mov ebx, [rsp+16000]
+        assert_emit_eq!(mov_reg_addr(ESP, Address::disp(RBP, 453)), 0x8B, 0xA5, 0xC5, 0x01, 0x00, 0x00); // mov esp, [rbp+453]
+        assert_emit_eq!(mov_reg_addr(R14D, Address::disp(R12, -883)), 0x45, 0x8B, 0xB4, 0x24, 0x8D, 0xFC, 0xFF, 0xFF); // mov r14d, [r12-883]
+        assert_emit_eq!(mov_reg_addr(ESI, Address::disp(R13, -10000)), 0x41, 0x8B, 0xB5, 0xF0, 0xD8, 0xFF, 0xFF); // mov esi, [r13-10000]
     }
 
     #[test]
     fn test_mov_addr64_reg32_disp32() {
-        assert_emit_eq!(mov_addr_reg(Address::displacement(RSP, 16000), R11D), 0x44, 0x89, 0x9C, 0x24, 0x80, 0x3E, 0x00, 0x00); // mov [rsp+16000], r11d
-        assert_emit_eq!(mov_addr_reg(Address::displacement(RBP, 453), EAX), 0x89, 0x85, 0xC5, 0x01, 0x00, 0x00); // mov [rbp+453], eax
-        assert_emit_eq!(mov_addr_reg(Address::displacement(R12, -883), EDI), 0x41, 0x89, 0xBC, 0x24, 0x8D, 0xFC, 0xFF, 0xFF); // mov [r12-883], edi
-        assert_emit_eq!(mov_addr_reg(Address::displacement(R13, -10000), ECX), 0x41, 0x89, 0x8D, 0xF0, 0xD8, 0xFF, 0xFF); // mov [r13-10000], ecx
+        assert_emit_eq!(mov_addr_reg(Address::disp(RSP, 16000), R11D), 0x44, 0x89, 0x9C, 0x24, 0x80, 0x3E, 0x00, 0x00); // mov [rsp+16000], r11d
+        assert_emit_eq!(mov_addr_reg(Address::disp(RBP, 453), EAX), 0x89, 0x85, 0xC5, 0x01, 0x00, 0x00); // mov [rbp+453], eax
+        assert_emit_eq!(mov_addr_reg(Address::disp(R12, -883), EDI), 0x41, 0x89, 0xBC, 0x24, 0x8D, 0xFC, 0xFF, 0xFF); // mov [r12-883], edi
+        assert_emit_eq!(mov_addr_reg(Address::disp(R13, -10000), ECX), 0x41, 0x89, 0x8D, 0xF0, 0xD8, 0xFF, 0xFF); // mov [r13-10000], ecx
     }
 
     #[test]
@@ -485,22 +478,22 @@ mod tests {
 
     #[test]
     fn test_mov_addr_imm32() {
-        assert_emit_eq!(mov_addr_imm32(Address::displacement(RCX, 0), -98), 0x48, 0xC7, 0x01, 0x9E, 0xFF, 0xFF, 0xFF); // movq [rcx], -98
-        assert_emit_eq!(mov_addr_imm32(Address::displacement(RBP, 0), 127), 0x48, 0xC7, 0x45, 0x00, 0x7F, 0x00, 0x00, 0x00); // movq [rbp], 127
-        assert_emit_eq!(mov_addr_imm32(Address::displacement(RSP, 0), -128), 0x48, 0xC7, 0x04, 0x24, 0x80, 0xFF, 0xFF, 0xFF); // movq [rsp], -128
-        assert_emit_eq!(mov_addr_imm32(Address::displacement(R12, 0), -0), 0x49, 0xC7, 0x04, 0x24, 0x00, 0x00, 0x00, 0x00); // movq [r12], 0
-        assert_emit_eq!(mov_addr_imm32(Address::displacement(R13, 0), 99), 0x49, 0xC7, 0x45, 0x00, 0x63, 0x00, 0x00, 0x00); // movq [r13], 99
-        assert_emit_eq!(mov_addr_imm32(Address::displacement(R11, 0), 2), 0x49, 0xC7, 0x03, 0x02, 0x00, 0x00, 0x00); // movq [r11], 2
+        assert_emit_eq!(mov_addr_imm32(Address::disp(RCX, 0), -98), 0x48, 0xC7, 0x01, 0x9E, 0xFF, 0xFF, 0xFF); // movq [rcx], -98
+        assert_emit_eq!(mov_addr_imm32(Address::disp(RBP, 0), 127), 0x48, 0xC7, 0x45, 0x00, 0x7F, 0x00, 0x00, 0x00); // movq [rbp], 127
+        assert_emit_eq!(mov_addr_imm32(Address::disp(RSP, 0), -128), 0x48, 0xC7, 0x04, 0x24, 0x80, 0xFF, 0xFF, 0xFF); // movq [rsp], -128
+        assert_emit_eq!(mov_addr_imm32(Address::disp(R12, 0), -0), 0x49, 0xC7, 0x04, 0x24, 0x00, 0x00, 0x00, 0x00); // movq [r12], 0
+        assert_emit_eq!(mov_addr_imm32(Address::disp(R13, 0), 99), 0x49, 0xC7, 0x45, 0x00, 0x63, 0x00, 0x00, 0x00); // movq [r13], 99
+        assert_emit_eq!(mov_addr_imm32(Address::disp(R11, 0), 2), 0x49, 0xC7, 0x03, 0x02, 0x00, 0x00, 0x00); // movq [r11], 2
     }
 
     #[test]
     fn test_mov_addr_imm32_disp8() {
-        assert_emit_eq!(mov_addr_imm32(Address::displacement(RDX, -10), -98), 0x48, 0xC7, 0x42, 0xF6, 0x9E, 0xFF, 0xFF, 0xFF); // movq [rdx-10], -98
-        assert_emit_eq!(mov_addr_imm32(Address::displacement(RBP, 12), 127), 0x48, 0xC7, 0x45, 0x0C, 0x7F, 0x00, 0x00, 0x00); // movq [rbp+12], 127
-        assert_emit_eq!(mov_addr_imm32(Address::displacement(RSP, -9), 2383839), 0x48, 0xC7, 0x44, 0x24, 0xF7, 0xDF, 0x5F, 0x24, 0x00); // movq [rsp-9], 2383839
-        assert_emit_eq!(mov_addr_imm32(Address::displacement(R12, 1), -129484), 0x49, 0xC7, 0x44, 0x24, 0x01, 0x34, 0x06, 0xFE, 0xFF); // movq [r12+1], -129484
-        assert_emit_eq!(mov_addr_imm32(Address::displacement(R13, 127), 88), 0x49, 0xC7, 0x45, 0x7F, 0x58, 0x00, 0x00, 0x00); // movq [r13+127],88
-        assert_emit_eq!(mov_addr_imm32(Address::displacement(R8, 16), 0), 0x49, 0xC7, 0x40, 0x10, 0x00, 0x00, 0x00, 0x00); // movq [r8+16], 0
+        assert_emit_eq!(mov_addr_imm32(Address::disp(RDX, -10), -98), 0x48, 0xC7, 0x42, 0xF6, 0x9E, 0xFF, 0xFF, 0xFF); // movq [rdx-10], -98
+        assert_emit_eq!(mov_addr_imm32(Address::disp(RBP, 12), 127), 0x48, 0xC7, 0x45, 0x0C, 0x7F, 0x00, 0x00, 0x00); // movq [rbp+12], 127
+        assert_emit_eq!(mov_addr_imm32(Address::disp(RSP, -9), 2383839), 0x48, 0xC7, 0x44, 0x24, 0xF7, 0xDF, 0x5F, 0x24, 0x00); // movq [rsp-9], 2383839
+        assert_emit_eq!(mov_addr_imm32(Address::disp(R12, 1), -129484), 0x49, 0xC7, 0x44, 0x24, 0x01, 0x34, 0x06, 0xFE, 0xFF); // movq [r12+1], -129484
+        assert_emit_eq!(mov_addr_imm32(Address::disp(R13, 127), 88), 0x49, 0xC7, 0x45, 0x7F, 0x58, 0x00, 0x00, 0x00); // movq [r13+127],88
+        assert_emit_eq!(mov_addr_imm32(Address::disp(R8, 16), 0), 0x49, 0xC7, 0x40, 0x10, 0x00, 0x00, 0x00, 0x00); // movq [r8+16], 0
     }
 
     #[test]
