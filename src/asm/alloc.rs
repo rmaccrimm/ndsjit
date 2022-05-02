@@ -1,11 +1,11 @@
-use super::{Instr, RegX64, VReg};
+use super::VReg;
 
 use std::vec::Vec;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum MappedReg {
     /// Mapped to a physical register
-    Phys(RegX64),
+    Phys(u8),
     /// Spilled onto stack with index
     Spill(usize),
     /// Not mapped
@@ -21,22 +21,22 @@ impl RegAllocation {
     pub fn default() -> RegAllocation {
         RegAllocation {
             mapping: vec![
-                MappedReg::Phys(RegX64::RBX), // R0
-                MappedReg::Phys(RegX64::RSI), // R1
-                MappedReg::Phys(RegX64::RDI), // R2
-                MappedReg::Phys(RegX64::R8),  // R3
-                MappedReg::Phys(RegX64::R9),  // R4
-                MappedReg::Phys(RegX64::R10), // R5
-                MappedReg::Phys(RegX64::R11), // R6
-                MappedReg::Phys(RegX64::R12), // R7
-                MappedReg::Phys(RegX64::R13), // R8
-                MappedReg::Phys(RegX64::R14), // R9
-                MappedReg::Phys(RegX64::R15), // R10
-                MappedReg::Spill(0),          // R11
-                MappedReg::Spill(1),          // R12
-                MappedReg::Spill(2),          // SP
-                MappedReg::Spill(3),          // LR
-                MappedReg::Spill(4),          // PC
+                MappedReg::Phys(3),  // R0
+                MappedReg::Phys(6),  // R1
+                MappedReg::Phys(7),  // R2
+                MappedReg::Phys(8),  // R3
+                MappedReg::Phys(9),  // R4
+                MappedReg::Phys(10), // R5
+                MappedReg::Phys(11), // R6
+                MappedReg::Phys(12), // R7
+                MappedReg::Phys(13), // R8
+                MappedReg::Phys(14), // R9
+                MappedReg::Phys(15), // R10
+                MappedReg::Spill(0), // R11
+                MappedReg::Spill(1), // R12
+                MappedReg::Spill(2), // SP
+                MappedReg::Spill(3), // LR
+                MappedReg::Spill(4), // PC
             ],
             num_spilled: 5,
         }

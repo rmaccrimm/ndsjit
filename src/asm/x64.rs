@@ -17,7 +17,16 @@ pub struct RegX64 {
 
 impl RegX64 {
     const fn new(value: u8, size: OperandSize) -> RegX64 {
+        assert!(value < 16);
         RegX64 { value, size }
+    }
+
+    pub fn reg32(value: u8) -> RegX64 {
+        assert!(value < 16);
+        RegX64 {
+            value,
+            size: Doubleword,
+        }
     }
 
     pub fn value(self) -> u8 {
@@ -83,6 +92,7 @@ impl Address {
 
     pub fn sib(scale: u8, index: RegX64, base: RegX64, displacement: i32) -> Address {
         assert!(scale == 1 || scale == 2 || scale == 4 || scale == 8);
+        assert!(index.size == base.size);
         assert_ne!(index.value(), RSP.value());
         Address {
             base,
@@ -207,6 +217,11 @@ impl EmitterX64 {
         self.emit_modrm_addr(0x8f, RegX64::new(0, Doubleword), addr)
     }
 
+    pub fn ret(&mut self) -> &mut Self {
+        self.buf.push(0xc3);
+        self
+    }
+
     pub fn sub_reg_imm32(&mut self, reg: RegX64, imm: i32) -> &mut Self {
         self.emit_modrm_reg(0x81, RegX64::new(0x5, Quadword), reg);
         self.emit_imm_data(imm as i64, Doubleword)
@@ -248,6 +263,7 @@ impl EmitterX64 {
         }
     }
 
+    /// Emit a ModR/M encoded instruction with two register operands
     fn emit_modrm_reg(&mut self, opcode: u8, reg: RegX64, rm: RegX64) -> &mut Self {
         if reg.size == Word {
             self.buf.push(PREF_16B);
@@ -258,8 +274,7 @@ impl EmitterX64 {
         self
     }
 
-    /// Handles logic shared my many instructions (most mov's at least, doesn't support immediate
-    /// operands at the moment)
+    /// Emit a ModR/M encoded instruction with an address operand
     fn emit_modrm_addr(&mut self, opcode: u8, reg: RegX64, rm: Address) -> &mut Self {
         if reg.size == Word {
             self.buf.push(PREF_16B);
