@@ -174,7 +174,7 @@ impl EmitterX64 {
         assert!(dest.size as u8 >= 32);
         dbg!(imm);
         let opcode = if dest.size == Doubleword { 0xc7 } else { 0xb8 };
-        self.buf.push(rex_prefix(true, dest as u8, 0, 0));
+        // self.buf.push(rex_prefix(true, dest as u8, 0, 0));
         self.buf.push(opcode);
         // self.emit_modrm_reg(opcode, RegX64::new(0, Quadword), dest);
         if dest.size == Doubleword {
@@ -215,8 +215,7 @@ impl EmitterX64 {
 
     fn emit_rex_reg(&mut self, reg: RegX64, rm: RegX64) {
         if reg.size == Quadword || reg.needs_rex() || rm.size == Quadword || rm.needs_rex() {
-            self.buf
-                .push(rex_prefix(reg.size == Quadword, reg.value(), rm.value(), 0));
+            self.buf.push(rex_prefix(reg.size == Quadword, reg.value(), rm.value(), 0));
         }
     }
 
@@ -249,8 +248,7 @@ impl EmitterX64 {
         // ModR/M byte and SIB byte
         match addr.index {
             None => {
-                self.buf
-                    .push(mod_rm_byte(addr.op_mod, reg.value(), addr.base.value()));
+                self.buf.push(mod_rm_byte(addr.op_mod, reg.value(), addr.base.value()));
                 // R/M = 100b (RSP and R12) is used to indicate SIB addressing mode, so if one of
                 // these is needed as the ptr reg, encode as SIB with no index, (sib = 0x24)
                 if addr.base.modrm_bits() == SIB_RM {
@@ -261,11 +259,7 @@ impl EmitterX64 {
                 // Indicates no index, so cannot be used as an index
                 assert!(index.reg.value() != RSP.value());
                 self.buf.push(mod_rm_byte(addr.op_mod, reg.value(), SIB_RM));
-                self.buf.push(sib_byte(
-                    index.scale as u8,
-                    index.reg.value(),
-                    addr.base.value(),
-                ));
+                self.buf.push(sib_byte(index.scale as u8, index.reg.value(), addr.base.value()));
             }
         }
         // Displacements
@@ -348,81 +342,66 @@ pub const R14: RegX64 = RegX64::new(14, Quadword);
 pub const R15: RegX64 = RegX64::new(15, Quadword);
 
 #[cfg(test)]
+#[rustfmt::skip]
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_add_reg32_reg32() {
-        let mut code = EmitterX64::new();
-        let f = EmitterX64::add_reg;
-        code.add_reg(EBX, EBP)
-            .add_reg(EAX, R15D)
-            .add_reg(R11D, ESI)
-            .add_reg(R8D, R9D);
-        assert_eq!(
-            code.buf,
-            vec![
-                0x01, 0xEB, // add ebx, ebp
-                0x44, 0x01, 0xF8, // add eax, r15d
-                0x41, 0x01, 0xF3, // add r11d, esi
-                0x45, 0x01, 0xC8, // add r8d, r9d
-            ]
-        );
+    macro_rules! assert_emit_eq {
+        ($method:ident ($($param:expr),*), $($e:expr),*) => {
+            let mut code = EmitterX64::new();
+            code.$method($($param),*);
+
+            let mut emit_str:  Vec<String> = Vec::new();
+            for x in code.buf.iter() {
+                emit_str.push(format!("{:02x}", x));
+            }
+
+            let mut exp_str: Vec<String> = Vec::new();
+            $(
+                exp_str.push(format!("{:02x}", $e));
+            )*
+
+            assert!(
+                code.buf == vec![$($e),*],
+                "assertion failed: Emitted code did not match expected\n \
+                  emitted: [{}]\n\
+                 expected: [{}]\n",
+                emit_str.join(", "),
+                exp_str.join(", ")
+            );
+        };
     }
 
     #[test]
-    #[rustfmt::skip]
+    fn test_add_reg32_reg32() {
+        assert_emit_eq!(add_reg(EBX, EBP), 0x01, 0xEB); // add ebx, ebp
+        assert_emit_eq!(add_reg(EAX, R15D), 0x44, 0x01, 0xF8); // add eax, r15d
+        assert_emit_eq!(add_reg(R11D, ESI), 0x41, 0x01, 0xF3); // add r11d, esi
+        assert_emit_eq!(add_reg(R8D, R9D), 0x45, 0x01, 0xC8); // add r8d, r9d
+    }
+
+    #[test]
     fn test_add_reg32_addr64_disp8() {
-        let mut code = EmitterX64::new();
-        code.add_addr(EBX, Address::displacement(RBP, 12))
-            .add_addr(EAX, Address::displacement(R12,-128))
-            .add_addr(R11D, Address::displacement(RSP, 90))
-            .add_addr(R8D, Address::displacement(R13, 127))
-            .add_addr(EDX, Address::displacement(RCX, 70));
-        assert_eq!(
-            code.buf,
-            vec![
-                0x03, 0x5D, 0x0C, // add ebx, [rbp+12]
-                0x41, 0x03, 0x44, 0x24, 0x80, // add eax, [r12-128]
-                0x44, 0x03, 0x5C, 0x24, 0x5A, // add r11d, [rsp+90]
-                0x45, 0x03, 0x45, 0x7F, // add r8d,[r13+127]
-                0x03, 0x51, 0x46, // add edx, [rcx+70]
-            ]
-        );
+        assert_emit_eq!(add_addr(EBX, Address::displacement(RBP, 12)), 0x03, 0x5D, 0x0C); // add ebx, [rbp+12]
+        assert_emit_eq!(add_addr(EAX, Address::displacement(R12, -128)), 0x41, 0x03, 0x44, 0x24, 0x80); // add eax, [r12-128]
+        assert_emit_eq!(add_addr(R11D, Address::displacement(RSP, 90)), 0x44, 0x03, 0x5C, 0x24, 0x5A); // add r11d, [rsp+90]
+        assert_emit_eq!(add_addr(R8D, Address::displacement(R13, 127)), 0x45, 0x03, 0x45, 0x7F); // add r8d,[r13+127]
+        assert_emit_eq!(add_addr(EDX, Address::displacement(RCX, 70)), 0x03, 0x51, 0x46); // add edx, [rcx+70]
     }
 
     #[test]
     fn test_mov_reg32_reg32() {
-        let mut code = EmitterX64::new();
-        code.mov_reg_reg(EAX, R15D)
-            .mov_reg_reg(ESP, EBP)
-            .mov_reg_reg(EBX, R9D);
-        assert_eq!(
-            code.buf,
-            vec![
-                0x44, 0x89, 0xF8, // mov eax, r15d
-                0x89, 0xEC, // mov esp, ebp
-                0x44, 0x89, 0xCB, // mov ebx, r9d
-            ]
-        );
+        assert_emit_eq!(mov_reg_reg(EAX, R15D), 0x44, 0x89, 0xF8); // mov eax, r15d
+        assert_emit_eq!(mov_reg_reg(ESP, EBP), 0x89, 0xEC); // mov esp, ebp
+        assert_emit_eq!(mov_reg_reg(EBX, R9D), 0x44, 0x89, 0xCB); // mov ebx, r9d
     }
 
     #[test]
     fn test_mov_reg64_reg64() {
-        let mut code = EmitterX64::new();
-        code.mov_reg_reg(RBX, RDX)
-            .mov_reg_reg(RDX, RBP)
-            .mov_reg_reg(R9, RSP)
-            .mov_reg_reg(RCX, R12);
-        assert_eq!(
-            code.buf,
-            vec![
-                0x48, 0x89, 0xD3, // mov rbx,rdx
-                0x48, 0x89, 0xEA, // mov rdx,rbp
-                0x49, 0x89, 0xE1, // mov r9,rsp
-                0x4C, 0x89, 0xE1, // mov rcx,r12
-            ]
-        )
+        assert_emit_eq!(mov_reg_reg(RBX, RDX), 0x48, 0x89, 0xD3); // mov rbx,rdx
+        assert_emit_eq!(mov_reg_reg(RDX, RBP), 0x48, 0x89, 0xEA); // mov rdx,rbp
+        assert_emit_eq!(mov_reg_reg(R9, RSP), 0x49, 0x89, 0xE1); // mov r9,rsp
+        assert_emit_eq!(mov_reg_reg(RCX, R12), 0x4C, 0x89, 0xE1); // mov rcx,r12
     }
 
     #[test]
@@ -434,235 +413,105 @@ mod tests {
 
     #[test]
     fn test_mov_reg32_addr64() {
-        let mut code = EmitterX64::new();
-        code.mov_reg_addr(R8D, Address::displacement(RBP, 0))
-            .mov_reg_addr(R15D, Address::displacement(RSI, 0))
-            .mov_reg_addr(EDI, Address::displacement(RBX, 0))
-            .mov_reg_addr(EAX, Address::displacement(RAX, 0))
-            .mov_reg_addr(R11D, Address::displacement(RCX, 0))
-            .mov_reg_addr(EBP, Address::displacement(RSP, 0))
-            .mov_reg_addr(ECX, Address::displacement(RDI, 0))
-            .mov_reg_addr(R9D, Address::displacement(R12, 0))
-            .mov_reg_addr(EAX, Address::displacement(R13, 0));
-        assert_eq!(
-            code.buf,
-            vec![
-                0x44, 0x8B, 0x45, 0x00, // mov r8d, [rbp]
-                0x44, 0x8B, 0x3E, // mov r15d, [rsi]
-                0x8B, 0x3B, // mov edi, [rbx]
-                0x8B, 0x00, // mov eax, [rax]
-                0x44, 0x8B, 0x19, // mov r11d, [rcx]
-                0x8B, 0x2C, 0x24, // mov ebp, [rsp]
-                0x8B, 0x0F, // mov ecx, [rdi]
-                0x45, 0x8B, 0x0C, 0x24, // mov r9d, [r12]
-                0x41, 0x8B, 0x45, 0x00, // mov eax, [r13]
-            ]
-        );
+        assert_emit_eq!(mov_reg_addr(R8D, Address::displacement(RBP, 0)), 0x44, 0x8B, 0x45, 0x00); // mov r8d, [rbp]
+        assert_emit_eq!(mov_reg_addr(R15D, Address::displacement(RSI, 0)), 0x44, 0x8B, 0x3E); // mov r15d, [rsi]
+        assert_emit_eq!(mov_reg_addr(EDI, Address::displacement(RBX, 0)), 0x8B, 0x3B); // mov edi, [rbx]
+        assert_emit_eq!(mov_reg_addr(EAX, Address::displacement(RAX, 0)), 0x8B, 0x00); // mov eax, [rax]
+        assert_emit_eq!(mov_reg_addr(R11D, Address::displacement(RCX, 0)), 0x44, 0x8B, 0x19); // mov r11d, [rcx]
+        assert_emit_eq!(mov_reg_addr(EBP, Address::displacement(RSP, 0)), 0x8B, 0x2C, 0x24); // mov ebp, [rsp]
+        assert_emit_eq!(mov_reg_addr(ECX, Address::displacement(RDI, 0)), 0x8B, 0x0F); // mov ecx, [rdi]
+        assert_emit_eq!(mov_reg_addr(R9D, Address::displacement(R12, 0)), 0x45, 0x8B, 0x0C, 0x24); // mov r9d, [r12]
+        assert_emit_eq!(mov_reg_addr(EAX, Address::displacement(R13, 0)), 0x41, 0x8B, 0x45, 0x00); // mov eax, [r13]
     }
 
     #[test]
     fn test_mov_addr64_reg32() {
-        let mut code = EmitterX64::new();
-        code.mov_addr_reg(Address::displacement(RBP, 0), EDI)
-            .mov_addr_reg(Address::displacement(RSP, 0), EAX)
-            .mov_addr_reg(Address::displacement(R12, 0), R15D)
-            .mov_addr_reg(Address::displacement(R13, 0), R13D);
-        assert_eq!(
-            code.buf,
-            vec![
-                0x89, 0x7D, 0x00, // mov [rbp], edi
-                0x89, 0x04, 0x24, // mov [rsp], eax
-                0x45, 0x89, 0x3C, 0x24, // mov [r12], r15d
-                0x45, 0x89, 0x6D, 0x00, // mov [r13], r13d
-            ]
-        )
+        assert_emit_eq!(mov_addr_reg(Address::displacement(RBP, 0), EDI), 0x89, 0x7D, 0x00); // mov [rbp], edi
+        assert_emit_eq!(mov_addr_reg(Address::displacement(RSP, 0), EAX), 0x89, 0x04, 0x24); // mov [rsp], eax
+        assert_emit_eq!(mov_addr_reg(Address::displacement(R12, 0), R15D), 0x45, 0x89, 0x3C, 0x24); // mov [r12], r15d 
+        assert_emit_eq!(mov_addr_reg(Address::displacement(R13, 0), R13D), 0x45, 0x89, 0x6D, 0x00); // mov [r13], r13d
     }
 
     #[test]
-    #[rustfmt::skip]
     fn test_mov_reg32_addr64_disp8() {
-        let mut code = EmitterX64::new();
-        code.mov_reg_addr(R8D, Address::displacement(RBP, 127))
-            .mov_reg_addr(R9D, Address::displacement(RSP, 10))
-            .mov_reg_addr(R10D, Address::displacement(R12, 99))
-            .mov_reg_addr(R11D, Address::displacement(R13, -45))
-            .mov_reg_addr(ECX, Address::displacement(R15, 109))
-            .mov_reg_addr(EBX, Address::displacement(RAX, 12));
-        assert_eq!(
-            code.buf,
-            vec![
-                0x44, 0x8B, 0x45, 0x7F, // mov r8d,[rbp+127]
-                0x44, 0x8B, 0x4C, 0x24, 0x0A, // mov r9d, [rsp+10]
-                0x45, 0x8B, 0x54, 0x24, 0x63, // mov r10d,[r12+99]
-                0x45, 0x8B, 0x5D, 0xD3, // mov r11d,[r13-45]
-                0x41, 0x8B, 0x4F, 0x6D, // mov ecx,[r15+109]
-                0x8B, 0x58, 0x0C, // mov ebx,[rax+12]
-            ]
-        )
+        assert_emit_eq!(mov_reg_addr(R8D, Address::displacement(RBP, 127)), 0x44, 0x8B, 0x45, 0x7F); // mov r8d,[rbp+127]
+        assert_emit_eq!(mov_reg_addr(R9D, Address::displacement(RSP, 10)), 0x44, 0x8B, 0x4C, 0x24, 0x0A); // mov r9d, [rsp+10]
+        assert_emit_eq!(mov_reg_addr(R10D, Address::displacement(R12, 99)), 0x45, 0x8B, 0x54, 0x24, 0x63); // mov r10d,[r12+99]
+        assert_emit_eq!(mov_reg_addr(R11D, Address::displacement(R13, -45)), 0x45, 0x8B, 0x5D, 0xD3); // mov r11d,[r13-45]
+        assert_emit_eq!(mov_reg_addr(ECX, Address::displacement(R15, 109)), 0x41, 0x8B, 0x4F, 0x6D); // mov ecx,[r15+109]
+        assert_emit_eq!(mov_reg_addr(EBX, Address::displacement(RAX, 12)), 0x8B, 0x58, 0x0C); // mov ebx,[rax+12]
     }
 
     #[test]
-    #[rustfmt::skip]
     fn test_mov_addr64_reg32_disp8() {
-        let mut code = EmitterX64::new();
-        code.mov_addr_reg(Address::displacement(RBP, -78), EAX)
-            .mov_addr_reg(Address::displacement(RSP, 10), EBX)
-            .mov_addr_reg(Address::displacement(R12, -3), ECX)
-            .mov_addr_reg(Address::displacement(R13, 44), R15D)
-            .mov_addr_reg(Address::displacement(RDI, -1), ESI);
-        assert_eq!(
-            code.buf,
-            vec![
-                0x89, 0x45, 0xB2, // mov [rbp-78], eax
-                0x89, 0x5C, 0x24, 0x0A, // mov [rsp+10], ebx
-                0x41, 0x89, 0x4C, 0x24, 0xFD, // mov [r12-3], ecx
-                0x45, 0x89, 0x7D, 0x2C, // mov [r13+44],r15d
-                0x89, 0x77, 0xFF, // mov [rdi-1], esi
-            ]
-        )
+        assert_emit_eq!(mov_addr_reg(Address::displacement(RBP, -78), EAX), 0x89, 0x45, 0xB2); // mov [rbp-78], eax
+        assert_emit_eq!(mov_addr_reg(Address::displacement(RSP, 10), EBX), 0x89, 0x5C, 0x24, 0x0A); // mov [rsp+10], ebx
+        assert_emit_eq!(mov_addr_reg(Address::displacement(R12, -3), ECX), 0x41, 0x89, 0x4C, 0x24, 0xFD); // mov [r12-3], ecx
+        assert_emit_eq!(mov_addr_reg(Address::displacement(R13, 44), R15D), 0x45, 0x89, 0x7D, 0x2C); // mov [r13+44],r15d
+        assert_emit_eq!(mov_addr_reg(Address::displacement(RDI, -1), ESI), 0x89, 0x77, 0xFF); // mov [rdi-1], esi
     }
 
     #[test]
-    #[rustfmt::skip]
     fn test_mov_reg32_addr64_disp32() {
-        let mut code = EmitterX64::new();
-        code.mov_reg_addr(EBX, Address::displacement(RSP, 16000))
-            .mov_reg_addr(ESP, Address::displacement(RBP, 453))
-            .mov_reg_addr(R14D, Address::displacement(R12, -883))
-            .mov_reg_addr(ESI, Address::displacement(R13, -10000));
-        assert_eq!(
-            code.buf,
-            vec![
-                0x8B, 0x9C, 0x24, 0x80, 0x3E, 0x00, 0x00, // mov ebx, [rsp+16000]
-                0x8B, 0xA5, 0xC5, 0x01, 0x00, 0x00, // mov esp, [rbp+453]
-                0x45, 0x8B, 0xB4, 0x24, 0x8D, 0xFC, 0xFF, 0xFF, // mov r14d, [r12-883]
-                0x41, 0x8B, 0xB5, 0xF0, 0xD8, 0xFF, 0xFF, // mov esi, [r13-10000]
-            ]
-        );
+        assert_emit_eq!(mov_reg_addr(EBX, Address::displacement(RSP, 16000)), 0x8B, 0x9C, 0x24, 0x80, 0x3E, 0x00, 0x00); // mov ebx, [rsp+16000]
+        assert_emit_eq!(mov_reg_addr(ESP, Address::displacement(RBP, 453)), 0x8B, 0xA5, 0xC5, 0x01, 0x00, 0x00); // mov esp, [rbp+453]
+        assert_emit_eq!(mov_reg_addr(R14D, Address::displacement(R12, -883)), 0x45, 0x8B, 0xB4, 0x24, 0x8D, 0xFC, 0xFF, 0xFF); // mov r14d, [r12-883]
+        assert_emit_eq!(mov_reg_addr(ESI, Address::displacement(R13, -10000)), 0x41, 0x8B, 0xB5, 0xF0, 0xD8, 0xFF, 0xFF); // mov esi, [r13-10000]
     }
 
     #[test]
-    #[rustfmt::skip]
     fn test_mov_addr64_reg32_disp32() {
-        let mut code = EmitterX64::new();
-        code.mov_addr_reg(Address::displacement(RSP, 16000), R11D)
-            .mov_addr_reg(Address::displacement(RBP, 453), EAX)
-            .mov_addr_reg(Address::displacement(R12, -883), EDI)
-            .mov_addr_reg(Address::displacement(R13, -10000), ECX);
-        assert_eq!(
-            code.buf,
-            vec![
-                0x44, 0x89, 0x9C, 0x24, 0x80, 0x3E, 0x00, 0x00, // mov [rsp+16000], r11d
-                0x89, 0x85, 0xC5, 0x01, 0x00, 0x00, // mov [rbp+453], eax
-                0x41, 0x89, 0xBC, 0x24, 0x8D, 0xFC, 0xFF, 0xFF, // mov [r12-883], edi
-                0x41, 0x89, 0x8D, 0xF0, 0xD8, 0xFF, 0xFF, // mov [r13-10000], ecx
-            ]
-        );
+        assert_emit_eq!(mov_addr_reg(Address::displacement(RSP, 16000), R11D), 0x44, 0x89, 0x9C, 0x24, 0x80, 0x3E, 0x00, 0x00); // mov [rsp+16000], r11d
+        assert_emit_eq!(mov_addr_reg(Address::displacement(RBP, 453), EAX), 0x89, 0x85, 0xC5, 0x01, 0x00, 0x00); // mov [rbp+453], eax
+        assert_emit_eq!(mov_addr_reg(Address::displacement(R12, -883), EDI), 0x41, 0x89, 0xBC, 0x24, 0x8D, 0xFC, 0xFF, 0xFF); // mov [r12-883], edi
+        assert_emit_eq!(mov_addr_reg(Address::displacement(R13, -10000), ECX), 0x41, 0x89, 0x8D, 0xF0, 0xD8, 0xFF, 0xFF); // mov [r13-10000], ecx
     }
 
     #[test]
     fn test_mov_reg32_imm32() {
-        let mut code = EmitterX64::new();
-        code.mov_reg_imm(EAX, 485884)
-            .mov_reg_imm(EBP, 0)
-            .mov_reg_imm(ESP, 19)
-            .mov_reg_imm(R12D, 753432)
-            .mov_reg_imm(R13D, 458)
-            .mov_reg_imm(R15D, 2147483647)
-            .mov_reg_imm(ESI, -28654);
-        assert_eq!(
-            code.buf,
-            vec![
-                0x48, 0xC7, 0xC0, 0xFC, 0x69, 0x07, 0x00, // mov rax, 485884
-                0x48, 0xC7, 0xC5, 0x00, 0x00, 0x00, 0x00, // mov rbp, 0
-                0x48, 0xC7, 0xC4, 0x13, 0x00, 0x00, 0x00, // mov rsp, 19
-                0x49, 0xC7, 0xC4, 0x18, 0x7F, 0x0B, 0x00, // mov r12, 753432
-                0x49, 0xC7, 0xC5, 0xCA, 0x01, 0x00, 0x00, // mov r13, 458
-                0x49, 0xC7, 0xC7, 0xFF, 0xFF, 0xFF, 0x7F, // mov r15, 2147483647
-                0x48, 0xC7, 0xC6, 0x12, 0x90, 0xFF, 0xFF, // mov rsi, -28654
-            ]
-        )
+        assert_emit_eq!(mov_reg_imm(EAX, 485884), 0x48, 0xC7, 0xC0, 0xFC, 0x69, 0x07, 0x00); // mov rax, 485884
+        assert_emit_eq!(mov_reg_imm(EBP, 0), 0x48, 0xC7, 0xC5, 0x00, 0x00, 0x00, 0x00); // mov rbp, 0
+        assert_emit_eq!(mov_reg_imm(ESP, 19), 0x48, 0xC7, 0xC4, 0x13, 0x00, 0x00, 0x00); // mov rsp, 19
+        assert_emit_eq!(mov_reg_imm(R12D, 753432), 0x49, 0xC7, 0xC4, 0x18, 0x7F, 0x0B, 0x00); // mov r12, 753432
+        assert_emit_eq!(mov_reg_imm(R13D, 458), 0x49, 0xC7, 0xC5, 0xCA, 0x01, 0x00, 0x00); // mov r13, 458
+        assert_emit_eq!(mov_reg_imm(R15D, 2147483647), 0x49, 0xC7, 0xC7, 0xFF, 0xFF, 0xFF, 0x7F); // mov r15, 2147483647
+        assert_emit_eq!(mov_reg_imm(ESI, -28654), 0x48, 0xC7, 0xC6, 0x12, 0x90, 0xFF, 0xFF); // mov rsi, -28654
     }
 
     #[test]
     fn test_mov_reg64_imm64() {
-        let mut code = EmitterX64::new();
-        code.mov_reg_imm(RAX, 500000000000);
-        code.hex_dump();
-        assert_eq!(
-            code.buf,
-            vec![
-                0x48, 0xB8, 0x00, 0x88, 0x52, 0x6A, 0x74, 0x00, 0x00,
-                0x00 // mov rax, 500000000000
-            ]
-        )
+        assert_emit_eq!(mov_reg_imm(RAX, 500000000000), 0x48, 0xB8, 0x00, 0x88, 0x52, 0x6A, 0x74, 0x00, 0x00, 0x00); // mov rax, 500000000000
     }
 
     #[test]
     fn test_mov_addr_imm32() {
-        let mut code = EmitterX64::new();
-        code.mov_addr_imm32(Address::displacement(RCX, 0), -98)
-            .mov_addr_imm32(Address::displacement(RBP, 0), 127)
-            .mov_addr_imm32(Address::displacement(RSP, 0), -128)
-            .mov_addr_imm32(Address::displacement(R12, 0), -0)
-            .mov_addr_imm32(Address::displacement(R13, 0), 99)
-            .mov_addr_imm32(Address::displacement(R11, 0), 2);
-        assert_eq!(
-            code.buf,
-            vec![
-                0x48, 0xC7, 0x01, 0x9E, 0xFF, 0xFF, 0xFF, // movq [rcx], -98
-                0x48, 0xC7, 0x45, 0x00, 0x7F, 0x00, 0x00, 0x00, // movq [rbp], 127
-                0x48, 0xC7, 0x04, 0x24, 0x80, 0xFF, 0xFF, 0xFF, // movq [rsp], -128
-                0x49, 0xC7, 0x04, 0x24, 0x00, 0x00, 0x00, 0x00, // movq [r12], 0
-                0x49, 0xC7, 0x45, 0x00, 0x63, 0x00, 0x00, 0x00, // movq [r13], 99
-                0x49, 0xC7, 0x03, 0x02, 0x00, 0x00, 0x00, // movq [r11], 2
-            ]
-        )
+        assert_emit_eq!(mov_addr_imm32(Address::displacement(RCX, 0), -98), 0x48, 0xC7, 0x01, 0x9E, 0xFF, 0xFF, 0xFF); // movq [rcx], -98
+        assert_emit_eq!(mov_addr_imm32(Address::displacement(RBP, 0), 127), 0x48, 0xC7, 0x45, 0x00, 0x7F, 0x00, 0x00, 0x00); // movq [rbp], 127
+        assert_emit_eq!(mov_addr_imm32(Address::displacement(RSP, 0), -128), 0x48, 0xC7, 0x04, 0x24, 0x80, 0xFF, 0xFF, 0xFF); // movq [rsp], -128
+        assert_emit_eq!(mov_addr_imm32(Address::displacement(R12, 0), -0), 0x49, 0xC7, 0x04, 0x24, 0x00, 0x00, 0x00, 0x00); // movq [r12], 0
+        assert_emit_eq!(mov_addr_imm32(Address::displacement(R13, 0), 99), 0x49, 0xC7, 0x45, 0x00, 0x63, 0x00, 0x00, 0x00); // movq [r13], 99
+        assert_emit_eq!(mov_addr_imm32(Address::displacement(R11, 0), 2), 0x49, 0xC7, 0x03, 0x02, 0x00, 0x00, 0x00); // movq [r11], 2
     }
 
     #[test]
     fn test_mov_addr_imm32_disp8() {
-        let mut code = EmitterX64::new();
-        code.mov_addr_imm32(Address::displacement(RDX, -10), -98)
-            .mov_addr_imm32(Address::displacement(RBP, 12), 127)
-            .mov_addr_imm32(Address::displacement(RSP, -9), 2383839)
-            .mov_addr_imm32(Address::displacement(R12, 1), -129484)
-            .mov_addr_imm32(Address::displacement(R13, 127), 88)
-            .mov_addr_imm32(Address::displacement(R8, 16), 0);
-        assert_eq!(
-            code.buf,
-            vec![
-                0x48, 0xC7, 0x42, 0xF6, 0x9E, 0xFF, 0xFF, 0xFF, // movq [rdx-10], -98
-                0x48, 0xC7, 0x45, 0x0C, 0x7F, 0x00, 0x00, 0x00, // movq [rbp+12], 127
-                0x48, 0xC7, 0x44, 0x24, 0xF7, 0xDF, 0x5F, 0x24, 0x00, // movq [rsp-9], 2383839
-                0x49, 0xC7, 0x44, 0x24, 0x01, 0x34, 0x06, 0xFE, 0xFF, // movq [r12+1], -129484
-                0x49, 0xC7, 0x45, 0x7F, 0x58, 0x00, 0x00, 0x00, // movq [r13+127],88
-                0x49, 0xC7, 0x40, 0x10, 0x00, 0x00, 0x00, 0x00, // movq [r8+16], 0
-            ]
-        )
+        assert_emit_eq!(mov_addr_imm32(Address::displacement(RDX, -10), -98), 0x48, 0xC7, 0x42, 0xF6, 0x9E, 0xFF, 0xFF, 0xFF); // movq [rdx-10], -98
+        assert_emit_eq!(mov_addr_imm32(Address::displacement(RBP, 12), 127), 0x48, 0xC7, 0x45, 0x0C, 0x7F, 0x00, 0x00, 0x00); // movq [rbp+12], 127
+        assert_emit_eq!(mov_addr_imm32(Address::displacement(RSP, -9), 2383839), 0x48, 0xC7, 0x44, 0x24, 0xF7, 0xDF, 0x5F, 0x24, 0x00); // movq [rsp-9], 2383839
+        assert_emit_eq!(mov_addr_imm32(Address::displacement(R12, 1), -129484), 0x49, 0xC7, 0x44, 0x24, 0x01, 0x34, 0x06, 0xFE, 0xFF); // movq [r12+1], -129484
+        assert_emit_eq!(mov_addr_imm32(Address::displacement(R13, 127), 88), 0x49, 0xC7, 0x45, 0x7F, 0x58, 0x00, 0x00, 0x00); // movq [r13+127],88
+        assert_emit_eq!(mov_addr_imm32(Address::displacement(R8, 16), 0), 0x49, 0xC7, 0x40, 0x10, 0x00, 0x00, 0x00, 0x00); // movq [r8+16], 0
     }
 
     #[test]
     #[rustfmt::skip]
     fn test_mov_reg32_addr_sib_disp32() {
-        let mut code = EmitterX64::new();
-        code.mov_reg_addr(ECX, Address::sib(2, RAX, RBX, 128))
-            .mov_reg_addr(ESI, Address::sib(4, RBP, RBP, -454))
-            .mov_reg_addr(R12D, Address::sib(8, R13, RSP, 209384))
-            .mov_reg_addr(EAX, Address::sib(1, R12, RDI, -943949))
-            .mov_reg_addr(ESP, Address::sib(1, R8, R13, -129))
-            .mov_reg_addr(R15D, Address::sib(1, RBX, R12, 349999));
-        assert_eq!(
-            code.buf,
-            vec![
-                0x8B, 0x8C, 0x43, 0x80, 0x00, 0x00, 0x00, // mov ecx, [rbx+2*rax+128]
-                0x8B, 0xB4, 0xAD, 0x3A, 0xFE, 0xFF, 0xFF, // mov esi, [rbp+4*rbp-454]
-                0x46, 0x8B, 0xA4, 0xEC, 0xE8, 0x31, 0x03, 0x00, // mov r12d, [rsp+8*r13+209384]
-                0x42, 0x8B, 0x84, 0x27, 0xB3, 0x98, 0xF1, 0xFF, // mov eax, [rdi+r12-943949]
-                0x43, 0x8B, 0xA4, 0x05, 0x7F, 0xFF, 0xFF, 0xFF, // mov esp, [r13+r8-129]
-                0x45, 0x8B, 0xBC, 0x1C, 0x2F, 0x57, 0x05, 0x00, // mov r15d, [r12+rbx+349999]
-            ]
-        );
+        assert_emit_eq!(mov_reg_addr(ECX, Address::sib(2, RAX, RBX, 128)), 0x8B, 0x8C, 0x43, 0x80, 0x00, 0x00, 0x00); // mov ecx, [rbx+2*rax+128]
+        assert_emit_eq!(mov_reg_addr(ESI, Address::sib(4, RBP, RBP, -454)), 0x8B, 0xB4, 0xAD, 0x3A, 0xFE, 0xFF, 0xFF); // mov esi, [rbp+4*rbp-454]
+        assert_emit_eq!(mov_reg_addr(R12D, Address::sib(8, R13, RSP, 209384)), 0x46, 0x8B, 0xA4, 0xEC, 0xE8, 0x31, 0x03, 0x00); // mov r12d, [rsp+8*r13+209384]
+        assert_emit_eq!(mov_reg_addr(EAX, Address::sib(1, R12, RDI, -943949)), 0x42, 0x8B, 0x84, 0x27, 0xB3, 0x98, 0xF1, 0xFF); // mov eax, [rdi+r12-943949]
+        assert_emit_eq!(mov_reg_addr(ESP, Address::sib(1, R8, R13, -129)), 0x43, 0x8B, 0xA4, 0x05, 0x7F, 0xFF, 0xFF, 0xFF); // mov esp, [r13+r8-129]
+        assert_emit_eq!(mov_reg_addr(R15D, Address::sib(1, RBX, R12, 349999)), 0x45, 0x8B, 0xBC, 0x1C, 0x2F, 0x57, 0x05, 0x00); // mov r15d, [r12+rbx+349999]
     }
 
     #[test]
@@ -676,23 +525,11 @@ mod tests {
     #[test]
     #[rustfmt::skip]
     fn test_mov_reg32_addr_sib() {
-        let mut code = EmitterX64::new();
-        code.mov_reg_addr(ECX, Address::sib(2, RAX, RBX, 0))
-            .mov_reg_addr(ESI, Address::sib(4, RBP, RBP, 0))
-            .mov_reg_addr(R12D, Address::sib(8, R13, RSP, 0))
-            .mov_reg_addr(EAX, Address::sib(1, R12, RDI, 0))
-            .mov_reg_addr(ESP, Address::sib(1, R8, R13, 0))
-            .mov_reg_addr(R15D, Address::sib(1, RBX, R12, 0));
-        assert_eq!(
-            code.buf,
-            vec![
-                0x8B, 0x0C, 0x43, // mov ecx, [rbx+2*rax]
-                0x8B, 0x74, 0xAD, 0x00, // mov esi, [rbp+4*rbp]
-                0x46, 0x8B, 0x24, 0xEC, // mov r12d, [rsp+8*r13]
-                0x42, 0x8B, 0x04, 0x27, // mov eax, [rdi+r12]
-                0x43, 0x8B, 0x64, 0x05, 0x00, // mov esp, [r13+r8]
-                0x45, 0x8B, 0x3C, 0x1C, // mov r15d, [r12+rbx]
-            ]
-        );
+        assert_emit_eq!(mov_reg_addr(ECX, Address::sib(2, RAX, RBX, 0)), 0x8B, 0x0C, 0x43); // mov ecx, [rbx+2*rax]
+        assert_emit_eq!(mov_reg_addr(ESI, Address::sib(4, RBP, RBP, 0)), 0x8B, 0x74, 0xAD, 0x00); // mov esi, [rbp+4*rbp]
+        assert_emit_eq!(mov_reg_addr(R12D, Address::sib(8, R13, RSP, 0)), 0x46, 0x8B, 0x24, 0xEC); // mov r12d, [rsp+8*r13]
+        assert_emit_eq!(mov_reg_addr(EAX, Address::sib(1, R12, RDI, 0)), 0x42, 0x8B, 0x04, 0x27); // mov eax, [rdi+r12]
+        assert_emit_eq!(mov_reg_addr(ESP, Address::sib(1, R8, R13, 0)), 0x43, 0x8B, 0x64, 0x05, 0x00); // mov esp, [r13+r8]
+        assert_emit_eq!(mov_reg_addr(R15D, Address::sib(1, RBX, R12, 0)), 0x45, 0x8B, 0x3C, 0x1C); // mov r15d, [r12+rbx]
     }
 }
