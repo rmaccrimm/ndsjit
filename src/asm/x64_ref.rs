@@ -1,22 +1,22 @@
 use std::vec::Vec;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-enum RegX64Size {
+enum OperandSize {
     Byte = 8,
     Word = 16,
     Doubleword = 32,
     Quadword = 64,
 }
-use RegX64Size::*;
+use OperandSize::*;
 
 #[derive(Copy, Clone)]
 pub struct RegX64 {
     value: u8,
-    size: RegX64Size,
+    size: OperandSize,
 }
 
 impl RegX64 {
-    const fn new(value: u8, size: RegX64Size) -> RegX64 {
+    const fn new(value: u8, size: OperandSize) -> RegX64 {
         RegX64 { value, size }
     }
 
@@ -171,18 +171,10 @@ impl EmitterX64 {
     }
 
     pub fn mov_reg_imm(&mut self, dest: RegX64, imm: i64) -> &mut Self {
-        assert!(dest.size as u8 >= 32);
-        dbg!(imm);
-        let opcode = if dest.size == Doubleword { 0xc7 } else { 0xb8 };
-        // self.buf.push(rex_prefix(true, dest as u8, 0, 0));
-        self.buf.push(opcode);
-        // self.emit_modrm_reg(opcode, RegX64::new(0, Quadword), dest);
-        if dest.size == Doubleword {
-            self.buf.extend_from_slice(&(imm as i32).to_le_bytes())
-        } else {
-            self.buf.extend_from_slice(&imm.to_le_bytes())
-        };
-        self
+        let opcode = if dest.size == Byte { 0xb9 } else { 0xb8 };
+        self.emit_rex_reg(RegX64::new(0, Doubleword), dest);
+        self.buf.push(opcode | dest.modrm_bits());
+        self.emit_imm_data(imm, dest.size)
     }
 
     pub fn mov_addr_imm32(&mut self, dest: Address, imm: i32) -> &mut Self {
@@ -217,7 +209,16 @@ impl EmitterX64 {
 
     pub fn sub_reg_imm32(&mut self, reg: RegX64, imm: i32) -> &mut Self {
         self.emit_modrm_reg(0x81, RegX64::new(0x5, Quadword), reg);
-        self.buf.extend_from_slice(&imm.to_le_bytes());
+        self.emit_imm_data(imm as i64, Doubleword)
+    }
+
+    fn emit_imm_data(&mut self, imm: i64, size: OperandSize) -> &mut Self {
+        match size {
+            Byte => self.buf.extend_from_slice(&(imm as i8).to_le_bytes()),
+            Word => self.buf.extend_from_slice(&(imm as i16).to_le_bytes()),
+            Doubleword => self.buf.extend_from_slice(&(imm as i32).to_le_bytes()),
+            Quadword => self.buf.extend_from_slice(&imm.to_le_bytes()),
+        };
         self
     }
 
@@ -238,7 +239,12 @@ impl EmitterX64 {
 
     fn emit_rex_reg(&mut self, reg: RegX64, rm: RegX64) {
         if reg.size == Quadword || reg.needs_rex() || rm.size == Quadword || rm.needs_rex() {
-            self.buf.push(rex_prefix(reg.size == Quadword, reg.value(), rm.value(), 0));
+            self.buf.push(rex_prefix(
+                reg.size == Quadword || rm.size == Quadword,
+                reg.value(),
+                rm.value(),
+                0,
+            ));
         }
     }
 
@@ -516,13 +522,13 @@ mod tests {
 
     #[test]
     fn test_mov_reg32_imm32() {
-        assert_emit_eq!(mov_reg_imm(EAX, 485884), 0x48, 0xC7, 0xC0, 0xFC, 0x69, 0x07, 0x00);
-        assert_emit_eq!(mov_reg_imm(EBP, 0), 0x48, 0xC7, 0xC5, 0x00, 0x00, 0x00, 0x00);
-        assert_emit_eq!(mov_reg_imm(ESP, 19), 0x48, 0xC7, 0xC4, 0x13, 0x00, 0x00, 0x00);
-        assert_emit_eq!(mov_reg_imm(R12D, 753432), 0x49, 0xC7, 0xC4, 0x18, 0x7F, 0x0B, 0x00);
-        assert_emit_eq!(mov_reg_imm(R13D, 458), 0x49, 0xC7, 0xC5, 0xCA, 0x01, 0x00, 0x00);
-        assert_emit_eq!(mov_reg_imm(R15D, 2147483647), 0x49, 0xC7, 0xC7, 0xFF, 0xFF, 0xFF, 0x7F);
-        assert_emit_eq!(mov_reg_imm(ESI, -28654), 0x48, 0xC7, 0xC6, 0x12, 0x90, 0xFF, 0xFF);
+        assert_emit_eq!(mov_reg_imm(EAX, 485884), 0xB8, 0xFC, 0x69, 0x07, 0x00);
+        assert_emit_eq!(mov_reg_imm(EBP, 0), 0xBD, 0x00, 0x00, 0x00, 0x00);
+        assert_emit_eq!(mov_reg_imm(ESP, 19), 0xBC, 0x13, 0x00, 0x00, 0x00);
+        assert_emit_eq!(mov_reg_imm(R12D, 753432), 0x41, 0xBC, 0x18, 0x7F, 0x0B, 0x00);
+        assert_emit_eq!(mov_reg_imm(R13D, 458), 0x41, 0xBD, 0xCA, 0x01, 0x00, 0x00);
+        assert_emit_eq!(mov_reg_imm(R15D, 2147483647), 0x41, 0xBF, 0xFF, 0xFF, 0xFF, 0x7F);
+        assert_emit_eq!(mov_reg_imm(ESI, -28654), 0xBE, 0x12, 0x90, 0xFF, 0xFF);
     }
 
     #[test]
