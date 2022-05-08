@@ -153,13 +153,31 @@ impl EmitterX64 {
         println!();
     }
 
-    pub fn add_reg(&mut self, dest: RegX64, src: RegX64) -> &mut Self {
+    pub fn add_addr_reg(&mut self, dest: Address, src: RegX64) -> &mut Self {
+        let opcode = if src.size == Byte {
+            if !(src.size == Quadword
+                || src.needs_rex()
+                || dest.base.needs_rex()
+                || dest.index.map_or(false, |i| i.reg.needs_rex()))
+            {
+                // This instruction needs an REX prefix, even if the operands wouldn't normally
+                // require it
+                self.buf.push(rex_prefix(false, 0, 0, 0));
+            }
+            0x00
+        } else {
+            0x01
+        };
+        self.emit_modrm_addr(opcode, src, dest)
+    }
+
+    pub fn add_reg_reg(&mut self, dest: RegX64, src: RegX64) -> &mut Self {
         assert_eq!(dest.size, src.size);
         let opcode = if src.size == Byte { 0x00 } else { 0x01 };
         self.emit_modrm_reg(opcode, src, dest)
     }
 
-    pub fn add_addr(&mut self, dest: RegX64, src: Address) -> &mut Self {
+    pub fn add_reg_addr(&mut self, dest: RegX64, src: Address) -> &mut Self {
         let opcode = if dest.size == Byte { 0x02 } else { 0x03 };
         self.emit_modrm_addr(opcode, dest, src)
     }
@@ -418,19 +436,32 @@ mod tests {
 
     #[test]
     fn test_add_reg32_reg32() {
-        assert_emit_eq!(add_reg(EBX, EBP), 0x01, 0xEB);
-        assert_emit_eq!(add_reg(EAX, R15D), 0x44, 0x01, 0xF8);
-        assert_emit_eq!(add_reg(R11D, ESI), 0x41, 0x01, 0xF3);
-        assert_emit_eq!(add_reg(R8D, R9D), 0x45, 0x01, 0xC8);
+        assert_emit_eq!(add_reg_reg(EBX, EBP), 0x01, 0xEB);
+        assert_emit_eq!(add_reg_reg(EAX, R15D), 0x44, 0x01, 0xF8);
+        assert_emit_eq!(add_reg_reg(R11D, ESI), 0x41, 0x01, 0xF3);
+        assert_emit_eq!(add_reg_reg(R8D, R9D), 0x45, 0x01, 0xC8);
     }
 
     #[test]
     fn test_add_reg32_addr64_disp8() {
-        assert_emit_eq!(add_addr(EBX, Address::disp(RBP, 12)), 0x03, 0x5D, 0x0C);
-        assert_emit_eq!(add_addr(EAX, Address::disp(R12, -128)), 0x41, 0x03, 0x44, 0x24, 0x80);
-        assert_emit_eq!(add_addr(R11D, Address::disp(RSP, 90)), 0x44, 0x03, 0x5C, 0x24, 0x5A);
-        assert_emit_eq!(add_addr(R8D, Address::disp(R13, 127)), 0x45, 0x03, 0x45, 0x7F);
-        assert_emit_eq!(add_addr(EDX, Address::disp(RCX, 70)), 0x03, 0x51, 0x46);
+        assert_emit_eq!(add_reg_addr(EBX, Address::disp(RBP, 12)), 0x03, 0x5D, 0x0C);
+        assert_emit_eq!(add_reg_addr(EAX, Address::disp(R12, -128)), 0x41, 0x03, 0x44, 0x24, 0x80);
+        assert_emit_eq!(add_reg_addr(R11D, Address::disp(RSP, 90)), 0x44, 0x03, 0x5C, 0x24, 0x5A);
+        assert_emit_eq!(add_reg_addr(R8D, Address::disp(R13, 127)), 0x45, 0x03, 0x45, 0x7F);
+        assert_emit_eq!(add_reg_addr(EDX, Address::disp(RCX, 70)), 0x03, 0x51, 0x46);
+    }
+
+    #[test]
+    fn test_add_addr_reg() {
+        assert_emit_eq!(add_addr_reg(Address::disp(RBP, 0), DIL), 0x40, 0x00, 0x7D, 0x00);
+        assert_emit_eq!(add_addr_reg(Address::disp(R15, 0), R11B), 0x45, 0x00, 0x1f);
+        assert_emit_eq!(add_addr_reg(Address::disp(R13, 0), SIL), 0x41, 0x00, 0x75, 0x00);
+        assert_emit_eq!(add_addr_reg(Address::disp(R9, 20), R14W), 0x66, 0x45, 0x01, 0x71, 0x14);
+        assert_emit_eq!(add_addr_reg(Address::sib(4, R12, RAX, 0), ESP), 0x42, 0x01, 0x24, 0xA0);
+        assert_emit_eq!(add_addr_reg(
+            Address::sib(1, RCX, RSP, 12349), RSP), 
+            0x48, 0x01, 0xA4, 0x0C, 0x3D, 0x30, 0x00, 0x00
+        );
     }
 
     #[test]
@@ -611,7 +642,6 @@ mod tests {
     }
 
     #[test]
-    #[rustfmt::skip]
     fn test_mov_reg32_addr_sib_disp32() {
         assert_emit_eq!(
             mov_reg_addr(ECX, Address::sib(2, RAX, RBX, 128)),
@@ -641,14 +671,12 @@ mod tests {
 
     #[test]
     #[should_panic]
-    #[rustfmt::skip]
     fn test_mov_reg32_addr_sib_disp32_sp_index() {
         let mut code = EmitterX64::new();
         code.mov_reg_addr(ECX, Address::sib(2, RSP, RBX, 128));
     }
 
     #[test]
-    #[rustfmt::skip]
     fn test_mov_reg32_addr_sib() {
         assert_emit_eq!(mov_reg_addr(ECX, Address::sib(2, RAX, RBX, 0)), 0x8B, 0x0C, 0x43);
         assert_emit_eq!(mov_reg_addr(ESI, Address::sib(4, RBP, RBP, 0)), 0x8B, 0x74, 0xAD, 0x00);
