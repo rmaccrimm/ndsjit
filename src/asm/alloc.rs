@@ -1,4 +1,4 @@
-use super::VReg;
+use super::ir::VReg;
 
 use std::vec::Vec;
 

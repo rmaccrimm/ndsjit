@@ -1,9 +1,10 @@
 pub mod alloc;
 mod execbuffer;
+pub mod vreg;
 mod x64;
 use std::mem;
 
-use super::ir::{Instr, VReg};
+use super::ir;
 use alloc::{MappedReg::*, RegAllocation};
 use execbuffer::ExecBuffer;
 
@@ -103,14 +104,14 @@ impl AssemblerX64 {
         self
     }
 
-    pub fn emit(&mut self, instr: Instr) {
+    pub fn emit(&mut self, instr: ir::Instr) {
         // match instr.opcode {
         //     MOVr(dest, src) => self.mov_reg(dest, src),
         //     MOVi(dest, imm) => self.mov_imm(dest, imm),
         // };
     }
 
-    fn mov_reg(&mut self, dest: VReg, src: VReg) -> &mut Self {
+    fn mov_reg(&mut self, dest: ir::VReg, src: ir::VReg) -> &mut Self {
         match (self.reg_alloc.get(dest), self.reg_alloc.get(src)) {
             (Phys(rd), Phys(rs)) => self.code.mov_reg_reg(RegX64::reg32(rd), RegX64::reg32(rs)),
             (Phys(rd), Spill(is)) => self
@@ -128,7 +129,7 @@ impl AssemblerX64 {
         self
     }
 
-    fn mov_imm(&mut self, dest: VReg, imm: i16) -> &mut Self {
+    fn mov_imm(&mut self, dest: ir::VReg, imm: i16) -> &mut Self {
         match self.reg_alloc.get(dest) {
             Phys(rd) => self.code.mov_reg_imm(RegX64::reg32(rd), imm as i64),
             Spill(ri) => {
@@ -140,7 +141,7 @@ impl AssemblerX64 {
     }
 
     /// Load value to register from absolute address
-    fn ldr_abs(&mut self, dest: VReg, addr: u32) -> &mut Self {
+    fn ldr_abs(&mut self, dest: ir::VReg, addr: u32) -> &mut Self {
         match self.reg_alloc.get(dest) {
             // TODO are unsigned to signed offset conversions going to be a problem?
             Phys(r) => {
@@ -159,7 +160,7 @@ impl AssemblerX64 {
     }
 
     /// Load value to register from address in pointer register plus immediate offset
-    fn ldr_rel_imm(&mut self, dest: VReg, ptr: VReg, offset: i32) -> &mut Self {
+    fn ldr_rel_imm(&mut self, dest: ir::VReg, ptr: ir::VReg, offset: i32) -> &mut Self {
         match (self.reg_alloc.get(dest), self.reg_alloc.get(ptr)) {
             (Phys(rd), Phys(rs)) => {
                 self.code.mov_reg_addr(
@@ -189,15 +190,21 @@ impl AssemblerX64 {
     }
 
     /// Load value to register from address in pointer register plus index register
-    fn ldr_rel_ind_imm(&mut self, dest: VReg, ptr: VReg, ind: VReg, offset: i32) -> &mut Self {
+    fn ldr_rel_ind_imm(
+        &mut self,
+        dest: ir::VReg,
+        ptr: ir::VReg,
+        ind: ir::VReg,
+        offset: i32,
+    ) -> &mut Self {
         match self.reg_alloc.get(ptr) {
             Phys(r) => self.code.mov_reg_reg(EAX, RegX64::reg32(r)),
             Spill(i) => self.code.mov_reg_addr(EAX, Address::disp(RBP, spill_stack_disp(i))),
             Unmapped => panic!(),
         };
         match self.reg_alloc.get(ind) {
-            Phys(r) => self.code.add_reg(EAX, RegX64::reg32(r)),
-            Spill(i) => self.code.add_addr(EAX, Address::disp(RBP, spill_stack_disp(i))),
+            Phys(r) => self.code.add_reg_reg(EAX, RegX64::reg32(r)),
+            Spill(i) => self.code.add_reg_addr(EAX, Address::disp(RBP, spill_stack_disp(i))),
             Unmapped => panic!(),
         };
         match self.reg_alloc.get(dest) {
