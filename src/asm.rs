@@ -7,6 +7,7 @@ use std::mem;
 use super::ir;
 use alloc::{MappedReg::*, RegAllocation};
 use execbuffer::ExecBuffer;
+use vreg::constants::*;
 
 use x64::*;
 
@@ -52,140 +53,44 @@ impl AssemblerX64 {
         println!();
     }
 
-    // Initialize physical register values with those in virtual registers (looked up through
-    // pointer in %rcx) and set up the stack. If we have to spill to memory, I guess that will make
-    // use of the (physical) stack?
-    pub fn gen_prologue(&mut self) -> &mut Self {
-        let mut stack_size = self.reg_alloc.num_spilled as i32 * mem::size_of::<u64>() as i32;
-        if stack_size % 16 == 0 {
-            // Ensures 16-byte stack allignment after call instructions (pushes 8 byte ret addr)
-            stack_size += 8;
-        }
-        self.code.push_reg(RBP).mov_reg_reg(RBP, RSP).sub_reg_imm32(RSP, stack_size);
-
-        for (i, mapping) in self.reg_alloc.mapping.iter().enumerate() {
-            let vreg_disp = REG_SIZE * i;
-            assert!(vreg_disp < (1 << 7));
-
-            match mapping {
-                Phys(r) => {
-                    self.code.mov_reg_addr(RegX64::reg32(*r), Address::disp(RCX, vreg_disp as i32));
-                }
-                Spill(ri) => {
-                    // Since prev base ptr is first on stack, add 1 to each index
-                    self.code
-                        .mov_reg_addr(EAX, Address::disp(RCX, vreg_disp as i32))
-                        .mov_addr_reg(Address::disp(RBP, spill_stack_disp(*ri)), EAX);
-                }
-                Unmapped => (),
-            };
-        }
-        self
-    }
-
     /// Move physical register values back to virtual state (through pointer still stored in rcx)
     pub fn gen_epilogue(&mut self) -> &mut Self {
-        for (i, mapping) in self.reg_alloc.mapping.iter().enumerate() {
-            let vreg_disp = mem::size_of::<u32>() * i;
-            assert!(vreg_disp < (1 << 7));
-            match mapping {
-                Phys(r) => {
-                    self.code.mov_addr_reg(Address::disp(RCX, vreg_disp as i32), RegX64::reg32(*r));
-                }
-                Spill(i) => {
-                    self.code
-                        .mov_reg_addr(EAX, Address::disp(RBP, spill_stack_disp(*i)))
-                        .mov_addr_reg(Address::disp(RCX, vreg_disp as i32), EAX);
-                }
-                _ => (),
-            }
+        for vreg in self.reg_alloc.mapping.iter() {
+            vreg.save_virt_state(&mut self.code);
         }
         self.code.mov_reg_reg(RSP, RBP).pop_reg(RBP).ret();
         self
     }
 
-    pub fn emit(&mut self, instr: ir::Instr) {
-        // match instr.opcode {
-        //     MOVr(dest, src) => self.mov_reg(dest, src),
-        //     MOVi(dest, imm) => self.mov_imm(dest, imm),
-        // };
-    }
-
     fn mov_reg(&mut self, dest: ir::VReg, src: ir::VReg) -> &mut Self {
-        match (self.reg_alloc.get(dest), self.reg_alloc.get(src)) {
-            (Phys(rd), Phys(rs)) => self.code.mov_reg_reg(RegX64::reg32(rd), RegX64::reg32(rs)),
-            (Phys(rd), Spill(is)) => self
-                .code
-                .mov_reg_addr(RegX64::reg32(rd), Address::disp(RBP, spill_stack_disp(is))),
-            (Spill(id), Phys(rs)) => self
-                .code
-                .mov_addr_reg(Address::disp(RBP, spill_stack_disp(id)), RegX64::reg32(rs)),
-            (Spill(id), Spill(is)) => self
-                .code
-                .mov_reg_addr(EAX, Address::disp(RBP, spill_stack_disp(is)))
-                .mov_addr_reg(Address::disp(RBP, spill_stack_disp(id)), EAX),
-            _ => panic!(),
-        };
+        self.reg_alloc.get(dest).mov_reg(self.reg_alloc.get(src), &mut self.code);
         self
     }
 
     fn mov_imm(&mut self, dest: ir::VReg, imm: i16) -> &mut Self {
-        match self.reg_alloc.get(dest) {
-            Phys(rd) => self.code.mov_reg_imm(RegX64::reg32(rd), imm as i64),
-            Spill(ri) => {
-                self.code.mov_addr_imm32(Address::disp(RBP, spill_stack_disp(ri)), imm as i32)
-            }
-            Unmapped => panic!(),
-        };
+        self.reg_alloc.get(dest).mov_imm16(imm, &mut self.code);
         self
     }
 
     /// Load value to register from absolute address
     fn ldr_abs(&mut self, dest: ir::VReg, addr: u32) -> &mut Self {
-        match self.reg_alloc.get(dest) {
-            // TODO are unsigned to signed offset conversions going to be a problem?
-            Phys(r) => {
-                self.code.mov_reg_addr(RegX64::reg32(r), Address::disp(RDX, addr as i32));
-            }
-            Spill(i) => {
-                // TODO - assuming here we can't spill past size of i8, i.e. 127 bytes. Should have
-                // a check for that at some point (or stop using i8s)
-                self.code
-                    .mov_reg_addr(EAX, Address::disp(RDX, addr as i32))
-                    .mov_addr_reg(Address::disp(RBP, spill_stack_disp(i)), EAX);
-            }
-            Unmapped => panic!(),
-        };
+        let d = self.reg_alloc.get(dest);
+        self.code.mov_reg_addr(
+            d.mapped_reg.unwrap_or(TEMP_REG),
+            Address::disp(VMEM_ADDR_REG, addr as i32),
+        );
+        if d.mapped_reg.is_none() {
+            self.code.mov_addr_reg(d.virt_loc, EAX);
+        }
         self
     }
 
     /// Load value to register from address in pointer register plus immediate offset
-    fn ldr_rel_imm(&mut self, dest: ir::VReg, ptr: ir::VReg, offset: i32) -> &mut Self {
-        match (self.reg_alloc.get(dest), self.reg_alloc.get(ptr)) {
-            (Phys(rd), Phys(rs)) => {
-                self.code.mov_reg_addr(
-                    RegX64::reg32(rd),
-                    Address::sib(1, RegX64::reg32(rs), EDX, offset),
-                );
-            }
-            (Phys(rd), Spill(is)) => {
-                self.code
-                    .mov_reg_addr(EAX, Address::disp(RBP, spill_stack_disp(is)))
-                    .mov_reg_addr(RegX64::reg32(rd), Address::sib(1, EAX, EDX, offset));
-            }
-            (Spill(id), Phys(rs)) => {
-                self.code
-                    .mov_reg_addr(EAX, Address::sib(1, RegX64::reg32(rs), EDX, offset))
-                    .mov_addr_reg(Address::disp(RBP, spill_stack_disp(id)), EAX);
-            }
-            (Spill(id), Spill(is)) => {
-                self.code
-                    .mov_reg_addr(EAX, Address::disp(RBP, spill_stack_disp(is)))
-                    .mov_reg_addr(EAX, Address::sib(1, EAX, EDX, offset))
-                    .mov_addr_reg(Address::disp(RBP, spill_stack_disp(id)), EAX);
-            }
-            _ => panic!(),
-        };
+    fn ldr_rel_imm(&mut self, dest: ir::VReg, base: ir::VReg, offset: i32) -> &mut Self {
+        let base_reg = self.reg_alloc.get(base).mov_spill_to_temp(&mut self.code);
+        self.reg_alloc
+            .get(dest)
+            .mov_addr(Address::sib(1, base_reg, VMEM_ADDR_REG, offset), &mut self.code);
         self
     }
 
@@ -193,39 +98,14 @@ impl AssemblerX64 {
     fn ldr_rel_ind_imm(
         &mut self,
         dest: ir::VReg,
-        ptr: ir::VReg,
-        ind: ir::VReg,
+        base: ir::VReg,
+        index: ir::VReg,
         offset: i32,
     ) -> &mut Self {
-        match self.reg_alloc.get(ptr) {
-            Phys(r) => self.code.mov_reg_reg(EAX, RegX64::reg32(r)),
-            Spill(i) => self.code.mov_reg_addr(EAX, Address::disp(RBP, spill_stack_disp(i))),
-            Unmapped => panic!(),
-        };
-        match self.reg_alloc.get(ind) {
-            Phys(r) => self.code.add_reg_reg(EAX, RegX64::reg32(r)),
-            Spill(i) => self.code.add_reg_addr(EAX, Address::disp(RBP, spill_stack_disp(i))),
-            Unmapped => panic!(),
-        };
-        match self.reg_alloc.get(dest) {
-            Phys(r) => {
-                if offset == 0 {
-                    self.code.mov_reg_addr(RegX64::reg32(r), Address::sib(1, RAX, RDX, 0));
-                } else {
-                    // Does this exist?
-                    self.code.mov_reg_addr(RegX64::reg32(r), Address::sib(1, RAX, RDX, offset));
-                }
-            }
-            Spill(i) => {
-                if offset == 0 {
-                    self.code.mov_reg_addr(EAX, Address::sib(1, RAX, RDX, 0));
-                } else {
-                    self.code.mov_reg_addr(EAX, Address::sib(1, RAX, RDX, offset));
-                }
-                self.code.mov_addr_reg(Address::disp(RBP, spill_stack_disp(i)), EAX);
-            }
-            Unmapped => panic!(),
-        };
+        let d = self.reg_alloc.get(dest);
+        d.mov_reg(self.reg_alloc.get(base), &mut self.code);
+        d.add_reg(self.reg_alloc.get(index), &mut self.code);
+        d.mov_addr(Address::sib(1, d.mapped_reg.unwrap(), VMEM_ADDR_REG, offset), &mut self.code);
         self
     }
 
@@ -253,6 +133,7 @@ mod tests {
             .mov_reg(PC, R6) // phys -> spill
             .mov_reg(R3, PC) // spill -> phys
             .gen_epilogue();
+        asm.hex_dump();
         let f = asm.get_exec_buffer();
         dbg!(cpu.vregs);
         f.call(cpu.vreg_base_ptr(), cpu.mem_base_ptr());
