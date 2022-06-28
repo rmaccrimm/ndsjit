@@ -5,14 +5,10 @@ mod x64;
 use std::mem;
 
 use super::ir;
-use alloc::{MappedReg::*, RegAllocation};
+use alloc::RegAllocation;
 use execbuffer::ExecBuffer;
-use vreg::constants::*;
-
-use x64::*;
 
 pub struct AssemblerX64 {
-    code: EmitterX64,
     reg_alloc: RegAllocation,
 }
 
@@ -36,61 +32,42 @@ get_exec_buffer will be called, something like:
 */
 impl AssemblerX64 {
     pub fn new(reg_alloc: RegAllocation) -> AssemblerX64 {
-        AssemblerX64 {
-            code: EmitterX64::new(),
-            reg_alloc,
-        }
+        let mut asm = AssemblerX64 { reg_alloc };
+        asm.reg_alloc.gen_prologue();
+        asm
     }
 
     pub fn get_exec_buffer(self) -> ExecBuffer {
-        ExecBuffer::from_vec(self.code.buf).unwrap()
+        ExecBuffer::from_vec(self.reg_alloc.code.buf).unwrap()
     }
 
-    pub fn hex_dump(&self) {
-        for b in self.code.buf.iter() {
+    pub fn hex_dump(&mut self) {
+        self.reg_alloc.gen_epilogue();
+        for b in self.reg_alloc.code.buf.iter() {
             print!("{:02x}", b);
         }
         println!();
     }
 
-    /// Move physical register values back to virtual state (through pointer still stored in rcx)
-    pub fn gen_epilogue(&mut self) -> &mut Self {
-        for vreg in self.reg_alloc.mapping.iter() {
-            vreg.save_virt_state(&mut self.code);
-        }
-        self.code.mov_reg_reg(RSP, RBP).pop_reg(RBP).ret();
-        self
-    }
-
     fn mov_reg(&mut self, dest: ir::VReg, src: ir::VReg) -> &mut Self {
-        self.reg_alloc.get(dest).mov_reg(self.reg_alloc.get(src), &mut self.code);
+        self.reg_alloc.mov_reg(dest, src);
         self
     }
 
     fn mov_imm(&mut self, dest: ir::VReg, imm: i16) -> &mut Self {
-        self.reg_alloc.get(dest).mov_imm16(imm, &mut self.code);
+        self.reg_alloc.mov_imm16(dest, imm);
         self
     }
 
     /// Load value to register from absolute address
     fn ldr_abs(&mut self, dest: ir::VReg, addr: u32) -> &mut Self {
-        let d = self.reg_alloc.get(dest);
-        self.code.mov_reg_addr(
-            d.mapped_reg.unwrap_or(TEMP_REG),
-            Address::disp(VMEM_ADDR_REG, addr as i32),
-        );
-        if d.mapped_reg.is_none() {
-            self.code.mov_addr_reg(d.virt_loc, EAX);
-        }
+        self.reg_alloc.mov_abs(dest, addr);
         self
     }
 
     /// Load value to register from address in pointer register plus immediate offset
     fn ldr_rel_imm(&mut self, dest: ir::VReg, base: ir::VReg, offset: i32) -> &mut Self {
-        let base_reg = self.reg_alloc.get(base).mov_spill_to_temp(&mut self.code);
-        self.reg_alloc
-            .get(dest)
-            .mov_addr(Address::sib(1, base_reg, VMEM_ADDR_REG, offset), &mut self.code);
+        self.reg_alloc.mov_offset(dest, base, offset);
         self
     }
 
@@ -102,15 +79,12 @@ impl AssemblerX64 {
         index: ir::VReg,
         offset: i32,
     ) -> &mut Self {
-        let d = self.reg_alloc.get(dest);
-        d.mov_reg(self.reg_alloc.get(base), &mut self.code);
-        d.add_reg(self.reg_alloc.get(index), &mut self.code);
-        d.mov_addr(Address::sib(1, d.mapped_reg.unwrap(), VMEM_ADDR_REG, offset), &mut self.code);
+        self.reg_alloc.mov_index(dest, base, index, offset);
         self
     }
 
     fn ret(&mut self) -> &mut Self {
-        self.code.ret();
+        self.reg_alloc.ret();
         self
     }
 }
@@ -125,14 +99,12 @@ mod tests {
     fn test_mov() {
         let mut cpu = ARM7::new();
         let mut asm = AssemblerX64::new(RegAllocation::default());
-        asm.gen_prologue()
-            .mov_imm(R0, 4958) // phys
+        asm.mov_imm(R0, 4958) // phys
             .mov_reg(R6, R0) // phys -> phys
             .mov_imm(SP, 193) // spill
             .mov_reg(LR, SP) // spill -> spill
             .mov_reg(PC, R6) // phys -> spill
-            .mov_reg(R3, PC) // spill -> phys
-            .gen_epilogue();
+            .mov_reg(R3, PC); // spill -> phys
         asm.hex_dump();
         let f = asm.get_exec_buffer();
         dbg!(cpu.vregs);
@@ -174,10 +146,8 @@ mod tests {
         let mut cpu = ARM7::new();
         setup_cpu_test_data(&mut cpu);
         let mut asm = AssemblerX64::new(RegAllocation::default());
-        asm.gen_prologue()
-            .ldr_abs(R0, 80) // phys
-            .ldr_abs(PC, 98) // spill
-            .gen_epilogue();
+        asm.ldr_abs(R0, 80) // phys
+            .ldr_abs(PC, 98); // spill
         asm.hex_dump();
         dbg!(cpu.vregs);
         let f = asm.get_exec_buffer();
@@ -192,15 +162,13 @@ mod tests {
         let mut cpu = ARM7::new();
         setup_cpu_test_data(&mut cpu);
         let mut asm = AssemblerX64::new(RegAllocation::default());
-        asm.gen_prologue()
-            .ldr_rel_ind_imm(R1, R3, R4, 0) // ppp
+        asm.ldr_rel_ind_imm(R1, R3, R4, 0) // ppp
             .ldr_rel_ind_imm(R2, R3, R11, 0) // pps
             .ldr_rel_ind_imm(R5, SP, R4, 0) // psp
             .ldr_rel_ind_imm(R6, SP, R11, 0) // pss
             .ldr_rel_ind_imm(LR, SP, R4, 0) // ssp
             .ldr_rel_ind_imm(R7, SP, R11, 10016)
-            .ldr_rel_ind_imm(R8, SP, R4, -10)
-            .gen_epilogue();
+            .ldr_rel_ind_imm(R8, SP, R4, -10);
         asm.hex_dump();
         dbg!(cpu.vregs);
         let f = asm.get_exec_buffer();
@@ -219,12 +187,10 @@ mod tests {
         let mut cpu = ARM7::new();
         setup_cpu_test_data(&mut cpu);
         let mut asm = AssemblerX64::new(RegAllocation::default());
-        asm.gen_prologue()
-            .ldr_rel_imm(R9, R3, -1) // pp
+        asm.ldr_rel_imm(R9, R3, -1) // pp
             .ldr_rel_imm(R10, SP, 16) // ps
             .ldr_rel_imm(PC, R4, 64) // sp
-            .ldr_rel_imm(R12, SP, 2) // ss
-            .gen_epilogue();
+            .ldr_rel_imm(R12, SP, 2); // ss
         asm.hex_dump();
         dbg!(cpu.vregs);
         let f = asm.get_exec_buffer();

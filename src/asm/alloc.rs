@@ -1,5 +1,6 @@
 use super::x64::*;
 use crate::ir::VReg;
+use std::mem;
 use std::vec::Vec;
 
 pub const TEMP_REG: RegX64 = EAX;
@@ -21,7 +22,7 @@ impl RegMapping {
 pub struct RegAllocation {
     mapping: Vec<RegMapping>,
     num_spilled: usize,
-    code: EmitterX64,
+    pub code: EmitterX64,
 }
 
 impl RegAllocation {
@@ -50,17 +51,17 @@ impl RegAllocation {
         }
     }
 
-    fn get(&self, reg: VReg) -> &RegMapping {
-        &self.mapping[reg as usize]
+    fn get(&self, reg: VReg) -> RegMapping {
+        self.mapping[reg as usize]
     }
 
-    pub fn load_virt_state(&self, reg: RegMapping) {
+    pub fn load_virt_state(&mut self, reg: RegMapping) {
         if let Some(r) = reg.host_reg {
             self.code.mov_reg_addr(r, reg.virt_loc);
         }
     }
 
-    pub fn save_virt_state(&self, reg: RegMapping) {
+    pub fn save_virt_state(&mut self, reg: RegMapping) {
         if let Some(r) = reg.host_reg {
             self.code.mov_addr_reg(reg.virt_loc, r);
         }
@@ -77,13 +78,22 @@ impl RegAllocation {
         }
         self.code.push_reg(RBP).mov_reg_reg(RBP, RSP).sub_reg_imm32(RSP, stack_size);
 
-        for vreg in self.reg_alloc.mapping.iter() {
-            vreg.load_virt_state(&mut self.code);
+        for vreg in self.mapping.clone().iter() {
+            self.load_virt_state(*vreg);
         }
         self
     }
 
-    pub fn mov_to_temp(&self, vreg: VReg) -> RegX64 {
+    /// Move physical register values back to virtual state (through pointer still stored in rcx)
+    pub fn gen_epilogue(&mut self) -> &mut Self {
+        for &vreg in self.mapping.clone().iter() {
+            self.save_virt_state(vreg);
+        }
+        self.code.mov_reg_reg(RSP, RBP).pop_reg(RBP).ret();
+        self
+    }
+
+    pub fn mov_to_temp(&mut self, vreg: VReg) -> RegX64 {
         let reg = self.get(vreg);
         match reg.host_reg {
             Some(r) => self.code.mov_reg_reg(TEMP_REG, r),
@@ -92,7 +102,17 @@ impl RegAllocation {
         TEMP_REG
     }
 
-    pub fn mov_reg(&self, dest: VReg, src: VReg) -> &Self {
+    pub fn mov_abs(&mut self, dest: VReg, addr: u32) -> &Self {
+        let dest = self.get(dest);
+        let addr = Address::disp(VMEM_ADDR_REG, addr as i32);
+        match dest.host_reg {
+            Some(r) => self.code.mov_reg_addr(r, addr),
+            None => self.code.mov_reg_addr(TEMP_REG, addr).mov_addr_reg(dest.virt_loc, TEMP_REG),
+        };
+        self
+    }
+
+    pub fn mov_reg(&mut self, dest: VReg, src: VReg) -> &Self {
         let tmp = self.mov_to_temp(src);
         let dest = self.get(dest);
         match dest.host_reg {
@@ -102,7 +122,7 @@ impl RegAllocation {
         self
     }
 
-    pub fn mov_offset(&self, dest: VReg, base: VReg, offset: i32) -> &Self {
+    pub fn mov_offset(&mut self, dest: VReg, base: VReg, offset: i32) -> &Self {
         let tmp = self.mov_to_temp(base);
         let dest = self.get(dest);
         let addr = Address::sib(1, tmp, VMEM_ADDR_REG, offset);
@@ -113,7 +133,7 @@ impl RegAllocation {
         self
     }
 
-    pub fn mov_index(&self, dest: VReg, base: VReg, index: VReg, offset: i32) -> &Self {
+    pub fn mov_index(&mut self, dest: VReg, base: VReg, index: VReg, offset: i32) -> &Self {
         let tmp = self.mov_to_temp(base);
         let ind = self.get(index);
         match ind.host_reg {
@@ -129,12 +149,17 @@ impl RegAllocation {
         self
     }
 
-    pub fn mov_imm16(&self, dest: VReg, imm: i16) -> &Self {
+    pub fn mov_imm16(&mut self, dest: VReg, imm: i16) -> &Self {
         let reg = self.get(dest);
         match reg.host_reg {
             Some(r) => self.code.mov_reg_imm(r, imm as i64),
             None => self.code.mov_addr_imm32(reg.virt_loc, imm as i32),
         };
+        self
+    }
+
+    pub fn ret(&mut self) -> &Self {
+        self.code.ret();
         self
     }
 
