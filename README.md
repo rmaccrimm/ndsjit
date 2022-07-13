@@ -3,8 +3,8 @@ Nintendo DS emulator.
 
 The primary goal for this project is to learn about and implement a functioning CPU emulator using
 just-in-time recompilation (also called dynamic binary translation, among other things) to translate
-code from ARM machine code to x86_64 machine code at runtime. It's also has provided a great excuse 
-to learn Rust.
+code from ARM machine code to x86_64 machine code at runtime. It's also provided a great excuse 
+to learn Rust!
 
 ## Status
 - The emitter (asm::x64::EmitterX64) can emit and run most forms of the x86_64 MOV instruction, 
