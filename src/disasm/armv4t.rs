@@ -11,6 +11,16 @@ fn word_align(addr: u32) -> u32 {
     addr & !(0b11)
 }
 
+// Branch with relative offset
+pub fn b_abs_arm(addr: u32, instr: u32) -> Opcode {
+    // Should be signed - is this right?
+    let target = Absolute(addr + bits(instr, 0..23));
+    match bit(instr, 24) {
+        false => B(target),
+        true => BL(target),
+    }
+}
+
 pub fn ldr_imm_thumb(instr: u32) -> Opcode {
     // Offset is in number of words, i.e. a multiple of 4
     let offset = bits(instr, 6..10) << 2;

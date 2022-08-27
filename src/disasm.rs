@@ -3,18 +3,23 @@ use super::ir::Opcode;
 use armv4t::*;
 use std::ops::Range;
 
+/// Get value of bit in positions start..end (inclusive)
 fn bits(word: u32, r: Range<usize>) -> u32 {
     assert!(r.start < r.end);
     (word >> r.start) & ((1 << (r.end - r.start + 1)) - 1)
 }
 
+/// Get value of a single bit
 fn bit(word: u32, b: usize) -> bool {
     (word >> b) & 1 == 1
 }
 
 pub fn try_disasm_arm(addr: u32, instr_bytes: &[u8; 4]) -> Option<Opcode> {
     let instr = u32::from_le_bytes(*instr_bytes);
-    None
+    match bits(instr, 25..27) {
+        0b101 => Some(b_abs_arm(addr, instr)),
+        _ => None,
+    }
 }
 
 pub fn try_disasm_thumb(addr: u32, instr_bytes: &[u8; 2]) -> Option<Opcode> {
@@ -27,6 +32,11 @@ pub fn try_disasm_thumb(addr: u32, instr_bytes: &[u8; 2]) -> Option<Opcode> {
         0b011 | 0b100 => Some(disasm_ldr_str_thumb(addr, instr)),
         _ => None,
     }
+}
+
+// Decode branching instruction (b, bl, blx)
+fn disasm_b_arm(addr: u32, instr: u32) -> Opcode {
+    match 
 }
 
 fn disasm_ldr_str_arm(addr: u32, instr: u32) -> Opcode {
