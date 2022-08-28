@@ -27,7 +27,7 @@ impl ARM7 {
 
     // Obtain a raw pointer to the first byte of the heap-allocated memory array
     pub fn mem_base_ptr(&mut self) -> *mut u8 {
-        (*self.mem).as_mut_ptr() as *mut u8
+        self.mem.as_mut_ptr() as *mut u8
     }
 }
 

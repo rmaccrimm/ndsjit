@@ -72,6 +72,8 @@ pub enum Opcode {
     LDRH(VReg, Address, Option<WriteBack>),
     LDRSB(VReg, Address, Option<WriteBack>),
     LDRSH(VReg, Address, Option<WriteBack>),
+    B(Address),
+    BL(Address),
 }
 // use Opcode::*;
 

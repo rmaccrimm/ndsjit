@@ -35,9 +35,9 @@ pub fn try_disasm_thumb(addr: u32, instr_bytes: &[u8; 2]) -> Option<Opcode> {
 }
 
 // Decode branching instruction (b, bl, blx)
-fn disasm_b_arm(addr: u32, instr: u32) -> Opcode {
-    match 
-}
+// fn disasm_b_arm(addr: u32, instr: u32) -> Opcode {
+    
+// }
 
 fn disasm_ldr_str_arm(addr: u32, instr: u32) -> Opcode {
     panic!()

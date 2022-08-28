@@ -42,11 +42,17 @@ impl AssemblerX64 {
     }
 
     pub fn hex_dump(&mut self) {
+        // TODO this shouldn't go here, currently required
         self.reg_alloc.gen_epilogue();
         for b in self.reg_alloc.code.buf.iter() {
             print!("{:02x}", b);
         }
         println!();
+    }
+
+    pub fn assemble(instr: ir::Instr) {
+        // big switch statement here I guess? Maybe we do something a little more sophisticated
+        // using an assemble trait or something like that?
     }
 
     fn mov_reg(&mut self, dest: ir::VReg, src: ir::VReg) -> &mut Self {
