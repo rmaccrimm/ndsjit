@@ -1,7 +1,7 @@
-use super::x64::{Address, EmitterX64, RegX64};
+use super::x64::{Address, RegX64};
 
 pub mod constants {}
-use constants::*;
+// use constants::*;
 
 pub struct VReg {
     pub virt_loc: Address,

@@ -1,3 +1,4 @@
+use crate::{asm::AssemblerX64, jit::JITCompiler};
 use std::convert::TryFrom;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -35,16 +36,25 @@ impl TryFrom<u32> for VReg {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
 enum Cond {
+    EQ,
+    NE,
+    CS,
+    CC,
+    MI,
+    PL,
+    VS,
+    VC,
+    HI,
+    LS,
+    GE,
+    LT,
+    GT,
+    LE,
     None,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum Offset {
-    Immediate(u32), // size?
-    Index(VReg),
-    ShiftIndex(VReg, u16),
-}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum WriteBack {
@@ -52,47 +62,144 @@ pub enum WriteBack {
     Post,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum Address {
-    Relative(VReg, Offset),
-    Absolute(u32),
+pub trait CodeGen {
+    type Compiler;
+    
+    fn must_interpret(&self) -> bool;
+    fn codegen(&self, jit: Self::Compiler);
+}
+
+pub enum ImmValue {
+    Word(u32),
+    HalfWord(u16),
+    Byte(u8),
+}
+
+pub enum Operand {
+    VReg(VReg),
+    Imm(ImmValue),
+}
+
+pub struct BinaryInstr {
+    cond: Cond,
+    op1: Operand,
+    op2: Operand,
+    
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct LDR {
+    dest: VReg,
+    src: Address,
+    writeback: Option<WriteBack>,
+}
+
+impl CodeGen for LDR {
+    fn must_interpret(&self) -> bool {
+        false
+    }
+
+    fn codegen(&self, asm: &mut AssemblerX64) {
+        match self.src {
+            Address::Absolute(addr) => asm.ldr_abs(self.dest, addr),
+            Address::Relative(base, off) => match off {
+                Offset::Immediate(imm) => asm.ldr_rel(self.dest, base, imm),
+                Offset::Index(ind) => asm.ldr_rel_ind(self.dest, base, ind, 0),
+                Offset::ShiftIndex(ind, shift) => {
+		    let tmp = asm.create_temp();
+		    asm.mov_reg(tmp, ind);
+		    asm.shift(tmp, shift);
+		    asm.ldr_rel_ind(self.dest, base, tmp, 0);
+		}
+            },
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct LDRB {
+    cond: Cond,
+    dest: VReg,
+    src: Address,
+    writeback: Option<WriteBack>,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct LDRH {
+    cond: Cond,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct LDRSB {
+    cond: Cond,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct LDRSH {
+    cond: Cond,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct STRB {
+    cond: Cond,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct STRH {
+    cond: Cond,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct B {
+    cond: Cond,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct BX {
+    cond: Cond,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct BL {
+    cond: Cond,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct NOP {
+    cond: Cond,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum Opcode {
+pub enum Instruction {
     // MOVi(VReg, i16),
     // MOVr(VReg, VReg),
     // PUSH(VReg),
     // POP(VReg),
     // STR(Address, VReg, Option<WriteBack>),
-    LDR(VReg, Address, Option<WriteBack>),
+    LDR(LDR),
     // STRB(Address, VReg, Option<WriteBack>),
-    LDRB(VReg, Address, Option<WriteBack>),
+    LDRB(LDRB),
     // STRH(Address, VReg, Option<WriteBack>),
-    LDRH(VReg, Address, Option<WriteBack>),
-    LDRSB(VReg, Address, Option<WriteBack>),
-    LDRSH(VReg, Address, Option<WriteBack>),
-    B(Address),
-    BL(Address),
+    LDRH(LDRH),
+    LDRSB(LDRSB),
+    LDRSH(LDRSH),
+    B(B),
+    BX(BX),
+    BL(BL),
+    NOP,
 }
-// use Opcode::*;
 
-// pub trait RegOps {
-//     fn vreg_ops(self) -> (Option<VReg>, Option<VReg>, Option<VReg>);
-// }
-
-// impl RegOps for Opcode {
-//     /// Get registers operands (if present) of an instruction
-//     fn vreg_ops(self) -> (Option<VReg>, Option<VReg>, Option<VReg>) {
-//         match self {
-//             MOVi(r, _) => (Some(r), None, None),
-//             MOVr(rd, rs) => (Some(rd), Some(rs), None),
-//             PUSH(r) => (Some(r), None, None),
-//             POP(r) => (Some(r), None, None),
-//             _ => (None, None, None),
-//         }
-//     }
-// }
+impl Opcode {
+    pub fn requires_interpreter(&self) -> bool {
+        match self {
+            Opcode::B(addr) | Opcode::BX(addr) | Opcode::BL(addr) => match addr {
+                Address::Absolute(_) => false,
+                Address::Relative(_, _) => true,
+            },
+            _ => false,
+        }
+    }
+}
 
 pub struct Instr {
     pub opcode: Opcode,

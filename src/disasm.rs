@@ -14,10 +14,9 @@ fn bit(word: u32, b: usize) -> bool {
     (word >> b) & 1 == 1
 }
 
-pub fn try_disasm_arm(addr: u32, instr_bytes: &[u8; 4]) -> Option<Opcode> {
-    let instr = u32::from_le_bytes(*instr_bytes);
+pub fn try_disasm_arm(addr: u32, instr: u32) -> Option<Opcode> {
     match bits(instr, 25..27) {
-        0b101 => Some(b_abs_arm(addr, instr)),
+        0b101 => Some(branch_arm(instr)),
         _ => None,
     }
 }

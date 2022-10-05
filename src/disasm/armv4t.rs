@@ -1,5 +1,6 @@
+pub mod instruction;
 use super::{bit, bits};
-use crate::ir::{Address::*, Offset::*, Opcode, Opcode::*, VReg, VReg::*, WriteBack::*};
+use crate::ir::{Address::*, Offset::*, Opcode, Opcode::*, VReg, VReg::*};
 
 /// Number of lookahead bytes in ARM mode
 const PC_LA_THUMB: u32 = 4;
@@ -11,10 +12,10 @@ fn word_align(addr: u32) -> u32 {
     addr & !(0b11)
 }
 
-// Branch with relative offset
-pub fn b_abs_arm(addr: u32, instr: u32) -> Opcode {
+// Branch with PC-relative offset
+pub fn branch_arm(instr: u32) -> Opcode {
     // Should be signed - is this right?
-    let target = Absolute(addr + bits(instr, 0..23));
+    let target = Relative(PC, Immediate(bits(instr, 0..23) << 4));
     match bit(instr, 24) {
         false => B(target),
         true => BL(target),

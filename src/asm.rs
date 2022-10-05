@@ -1,5 +1,5 @@
 pub mod alloc;
-mod execbuffer;
+pub mod execbuffer;
 pub mod vreg;
 mod x64;
 use std::mem;
@@ -10,6 +10,7 @@ use execbuffer::ExecBuffer;
 
 pub struct AssemblerX64 {
     reg_alloc: RegAllocation,
+    num_instrs: usize,
 }
 
 const REG_SIZE: usize = mem::size_of::<u32>() as usize;
@@ -32,13 +33,20 @@ get_exec_buffer will be called, something like:
 */
 impl AssemblerX64 {
     pub fn new(reg_alloc: RegAllocation) -> AssemblerX64 {
-        let mut asm = AssemblerX64 { reg_alloc };
+        let mut asm = AssemblerX64 {
+            reg_alloc,
+            num_instrs: 0,
+        };
         asm.reg_alloc.gen_prologue();
         asm
     }
 
-    pub fn get_exec_buffer(self) -> ExecBuffer {
-        ExecBuffer::from_vec(self.reg_alloc.code.buf).unwrap()
+    pub fn get_exec_buffer(self) -> Option<ExecBuffer> {
+        if self.num_instrs > 0 {
+            Some(ExecBuffer::from_vec(self.reg_alloc.code.buf).unwrap())
+        } else {
+            None
+        }
     }
 
     pub fn hex_dump(&mut self) {
@@ -50,35 +58,30 @@ impl AssemblerX64 {
         println!();
     }
 
-    pub fn assemble(instr: ir::Instr) {
-        // big switch statement here I guess? Maybe we do something a little more sophisticated
-        // using an assemble trait or something like that?
-    }
-
     fn mov_reg(&mut self, dest: ir::VReg, src: ir::VReg) -> &mut Self {
         self.reg_alloc.mov_reg(dest, src);
         self
     }
 
-    fn mov_imm(&mut self, dest: ir::VReg, imm: i16) -> &mut Self {
+    pub fn mov_imm(&mut self, dest: ir::VReg, imm: i16) -> &mut Self {
         self.reg_alloc.mov_imm16(dest, imm);
         self
     }
 
     /// Load value to register from absolute address
-    fn ldr_abs(&mut self, dest: ir::VReg, addr: u32) -> &mut Self {
+    pub fn ldr_abs(&mut self, dest: ir::VReg, addr: u32) -> &mut Self {
         self.reg_alloc.mov_abs(dest, addr);
         self
     }
 
     /// Load value to register from address in pointer register plus immediate offset
-    fn ldr_rel_imm(&mut self, dest: ir::VReg, base: ir::VReg, offset: i32) -> &mut Self {
+    pub fn ldr_rel(&mut self, dest: ir::VReg, base: ir::VReg, offset: i32) -> &mut Self {
         self.reg_alloc.mov_offset(dest, base, offset);
         self
     }
 
     /// Load value to register from address in pointer register plus index register
-    fn ldr_rel_ind_imm(
+    pub fn ldr_ind(
         &mut self,
         dest: ir::VReg,
         base: ir::VReg,
@@ -114,7 +117,7 @@ mod tests {
         asm.hex_dump();
         let f = asm.get_exec_buffer();
         dbg!(cpu.vregs);
-        f.call(cpu.vreg_base_ptr(), cpu.mem_base_ptr());
+        f.unwrap().call(cpu.vreg_base_ptr(), cpu.mem_base_ptr());
         dbg!(cpu.vregs);
         assert_eq!(cpu.vregs[R0 as usize], 4958);
         assert_eq!(cpu.vregs[R6 as usize], 4958);
