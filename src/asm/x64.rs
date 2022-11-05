@@ -1,4 +1,5 @@
-use std::vec::Vec;
+use std::mem;
+use std::{collections::HashMap, vec::Vec};
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 enum OperandSize {
@@ -106,6 +107,13 @@ impl Address {
     }
 }
 
+#[derive(Copy, Clone)]
+/// Represents a jump target
+pub struct Label {
+    id: usize,
+    index: Option<usize>,
+}
+
 /// REX prefix byte, which extends the ModR/M and/or SIB bytes in 64 bit mode by encoding the msb
 /// for operands. W indicates 64-bit operands, but is sometimes not needed (e.g. in push/pop)
 fn rex_prefix(w: bool, reg: u8, rm_or_base: u8, index: u8) -> u8 {
@@ -121,6 +129,9 @@ const PC_REL_RM: u8 = 0b101;
 
 /// 16-bit override prefix
 const PREF_16B: u8 = 0x66;
+
+/// Prefix for conditional jump instructions
+const PREF_COND_JMP: u8 = 0x0f;
 
 /// ModR/M byte which encodes an addressing mode, and the 3 lsb of a register operand (reg) and
 /// register or memory operand (r/m). Alternatively the reg field is sometimes an extension of the
@@ -138,12 +149,23 @@ fn sib_byte(scale: u8, index: u8, base: u8) -> u8 {
 
 /// Stores a vec of encoded x86_64 instructons
 pub struct EmitterX64 {
+    /// Emitted machine code. Does this need to be public?
     pub buf: Vec<u8>,
+
+    /// Map of label id to Labels
+    labels: HashMap<usize, Label>,
+
+    /// Buffer index of jump instructions whose targets will need to be resolved
+    jumps: Vec<usize>,
 }
 
 impl EmitterX64 {
     pub fn new() -> EmitterX64 {
-        EmitterX64 { buf: Vec::new() }
+        EmitterX64 {
+            buf: Vec::new(),
+            labels: HashMap::new(),
+            jumps: Vec::new(),
+        }
     }
 
     pub fn hex_dump(&self) {
@@ -151,6 +173,19 @@ impl EmitterX64 {
             print!("{:02x}", b);
         }
         println!();
+    }
+
+    pub fn gen_label(&mut self) -> Label {
+        let id = self.labels.len();
+        let label = Label { id, index: None };
+        self.labels.insert(id, label);
+        label
+    }
+
+    pub fn bind_label(&mut self, label: Label) -> &mut Self {
+        let index = Some(self.buf.len());
+        self.labels.get_mut(&label.id).unwrap().index = index;
+        self
     }
 
     pub fn add_addr_reg(&mut self, dest: Address, src: RegX64) -> &mut Self {
@@ -180,6 +215,70 @@ impl EmitterX64 {
     pub fn add_reg_addr(&mut self, dest: RegX64, src: Address) -> &mut Self {
         let opcode = if dest.size == Byte { 0x02 } else { 0x03 };
         self.emit_modrm_addr(opcode, dest, src)
+    }
+
+    /// The target label is simply embeded as an identifier, which will later be resolved to a
+    /// relative displacement
+    fn emit_jmp(&mut self, opcode: u8, conditional: bool, target: Label) -> &mut Self {
+        if conditional {
+            self.buf.push(PREF_COND_JMP);
+        }
+        self.buf.push(opcode);
+        self.buf.extend_from_slice(&(target.id as u32).to_le_bytes());
+        self
+    }
+
+    fn resolve_jmps(&mut self) {
+        for &i in self.jumps.iter() {
+            let label_ind = if self.buf[i] == PREF_COND_JMP {
+                i + 2
+            } else {
+                i + 1
+            };
+            let label_bytes = &self.buf[label_ind..label_ind + 4];
+            let label_id = u32::from_le_bytes(label_bytes.try_into().unwrap()) as usize;
+            let target_ind =
+                self.labels.get(&label_id).unwrap().index.expect("Found unbound label");
+            let rel_jump = (target_ind as i32) - (i as i32);
+            for (i, &b) in rel_jump.to_le_bytes().iter().enumerate() {
+                self.buf[label_ind + i] = b;
+            }
+        }
+    }
+
+    /// Jump if carry (CF=1)
+    pub fn jc(&mut self, target: Label) -> &mut Self {
+        self.emit_jmp(0x82, true, target)
+    }
+
+    /// Jump if carry (CF=0)
+    pub fn jnc(&mut self, target: Label) -> &mut Self {
+        self.emit_jmp(0x83, true, target)
+    }
+
+    /// Jump if equal (ZF=1)
+    pub fn je(&mut self, target: Label) -> &mut Self {
+        self.emit_jmp(0x84, true, target)
+    }
+
+    /// Jump if zero (ZF=1)
+    pub fn jz(&mut self, target: Label) -> &mut Self {
+        self.je(target)
+    }
+
+    /// Jump if not equal (ZF=0)
+    pub fn jne(&mut self, target: Label) -> &mut Self {
+        self.emit_jmp(0x85, true, target)
+    }
+
+    /// Jump if not zero (ZF=0)
+    pub fn jnz(&mut self, target: Label) -> &mut Self {
+        self.jne(target)
+    }
+
+    /// Unconditional jump
+    pub fn jmp(&mut self, target: Label) -> &mut Self {
+        self.emit_jmp(0xe9, false, target)
     }
 
     pub fn mov_reg_reg(&mut self, dest: RegX64, src: RegX64) -> &mut Self {
@@ -793,5 +892,27 @@ mod tests {
     fn test_sub_reg64_imm32() {
         assert_emit_eq!(sub_reg_imm32(RBP, -329), 0x48, 0x81, 0xED, 0xB7, 0xFE, 0xFF, 0xFF);
         assert_emit_eq!(sub_reg_imm32(RSP, 999), 0x48, 0x81, 0xEC, 0xE7, 0x03, 0x00, 0x00);
+    }
+
+    #[test]
+    fn test_jumps_to_labels() {
+	use super::super::execbuffer::ExecBuffer;
+	let e = EmitterX64::new();
+	let lp = e.gen_label();
+	e.mov_reg_imm(R10, 5)
+	    .mov_reg_imm(R11, 2)
+	    .bind_label(lp)
+	    .add_reg_reg(R11, R11)
+	    .sub_reg_imm32(R10, 1)
+	    .jnz(lp)
+	    .mov_reg_reg(RAX, R11)
+	    .ret();
+	e.hex_dump();
+	let buf = ExecBuffer::from_vec(e.buf).unwrap();
+	unsafe {
+	    let f: unsafe extern "C" fn() -> u32 = mem::transmute(buf.ptr);
+	    let res = f();
+	    assert_eq!(res, 64);
+	}
     }
 }

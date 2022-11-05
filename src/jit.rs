@@ -19,7 +19,12 @@ pub enum DataType {
 /// or allocated on the stack
 pub struct Value {
     dtype: DataType,
-    label: usize,
+    id: usize,
+}
+
+/// Represents a jump target
+pub struct Label {
+    index: usize
 }
 
 /// Used for memory reads/writes, but not sure how these will be created/used just yet
@@ -27,28 +32,30 @@ pub struct Address {}
 
 /// Planning to replace the Assembler interface with this. Will compile single code blocks only,
 /// i.e. no control flow, functions, etc.
-pub struct JITCompiler {}
+pub struct CompilerX64 {
+        
+}
 
-impl JITCompiler {
+impl CompilerX64 {
     pub fn compile() -> ExecBuffer {
         todo!();
     }
 
-    /// Create a new 32-bit named valued. User provided labels are used for the context switch
+    /// Create a new 32-bit named valued. User provided names are used for the context switch
     /// between compiled code and emulated state
-    pub fn named_word(label: VReg) -> Value {
+    pub fn named_word(name: VReg) -> Value {
         todo!();
     }
 
-    /// Create a new 16-bit named valued. User provided labels are used for the context switch
+    /// Create a new 16-bit named valued. User provided names are used for the context switch
     /// between compiled code and emulated state
-    pub fn named_halfword(label: VReg) -> Value {
+    pub fn named_halfword(name: VReg) -> Value {
         todo!();
     }
 
-    /// Create a new 16-bit named valued. User provided labels are used for the context switch
+    /// Create a new 16-bit named valued. User provided names are used for the context switch
     /// between compiled code and emulated state
-    pub fn named_byte(label: VReg) -> Value {
+    pub fn named_byte(name: VReg) -> Value {
         todo!()
     }
 
@@ -67,6 +74,14 @@ impl JITCompiler {
     /// Create new temporary 8-bit value. Temporary values are used for operations but won't
     /// persist past the execution of the code block   
     pub fn temp_byte() -> Value {
+        todo!()
+    }
+
+    pub fn gen_label() -> Label {
+        todo!()
+    }
+
+    pub fn bind_label() -> Label {
         todo!()
     }
 
