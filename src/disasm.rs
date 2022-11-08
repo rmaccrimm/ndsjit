@@ -1,4 +1,4 @@
-mod armv4t;
+pub mod armv4t;
 use super::ir::Opcode;
 use armv4t::*;
 use std::ops::Range;

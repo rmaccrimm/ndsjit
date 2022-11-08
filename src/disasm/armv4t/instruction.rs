@@ -3,12 +3,12 @@
 /// follow the convention used in the ARM architecture manuals (Rd, Rn, Rm, etc.)
 /// TODO - maybe these should just be integers?
 pub struct Registers {
-    dest: Option<Register>,
-    rn: Option<Register>,
-    rm: Option<Register>,
-    shift: Option<Register>,
-    lo: Option<Register>,
-    hi: Option<Register>,
+    pub dest: Option<usize>,
+    pub rn: Option<usize>,
+    pub rm: Option<usize>,
+    pub shift: Option<usize>,
+    pub lo: Option<usize>,
+    pub hi: Option<usize>,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -30,7 +30,6 @@ pub enum Cond {
     LT,
     GT,
     LE,
-    None,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -89,9 +88,11 @@ pub enum ShiftDirection {
 
 #[derive(Copy, Clone, Debug)]
 pub struct DataProc {
-    op: DataProcOp,
-    regs: Registers,
-    imm: Option<ImmValue>,
+    pub op: DataProcOp,
+    pub regs: Registers,
+    pub imm: Option<i32>,
+    pub cond: Option<Cond>,
+    pub update_flags: bool,
 }
 
 #[derive(Copy, Clone, Debug)]

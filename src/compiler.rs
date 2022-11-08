@@ -1,9 +1,15 @@
 pub mod emitter;
 pub mod execbuffer;
 
+use std::collections::HashMap;
+
 // The JIT compiler interface used to implement the CodeGen trait, abstracts over the x86_64
 // interface handled by the Emitter
 use execbuffer::ExecBuffer;
+
+pub use emitter::Label;
+
+use self::emitter::EmitterX64;
 
 /// Should address be one of these?
 pub enum DataType {
@@ -19,93 +25,96 @@ pub enum DataType {
 
 /// Represents a register or temp value. Under the hood will either be mapped to a physical register
 /// or allocated on the stack
-pub struct Value {
+pub struct Variable {
     dtype: DataType,
     id: usize,
 }
 
-/// Represents a jump target
-pub struct Label {
-    index: usize
+pub enum Value {
+    Variable(Variable),
+    ImmediateData(i32),
 }
-
-/// Used for memory reads/writes, but not sure how these will be created/used just yet
-pub struct Address {}
 
 /// Planning to replace the Assembler interface with this. Will compile single code blocks only,
 /// i.e. no control flow, functions, etc.
 pub struct CompilerX64 {
-        
+    e: EmitterX64,
+    vars: HashMap<usize, Variable>,
 }
 
 impl CompilerX64 {
+    pub fn new() -> CompilerX64 {
+        CompilerX64 {
+            e: EmitterX64::new(),
+            vars: HashMap::new(),
+        }
+    }
+
     pub fn compile() -> ExecBuffer {
+        todo!();
+    }
+
+    pub fn evaluate_flags() {
         todo!();
     }
 
     /// Create a new 32-bit named valued. User provided names are used for the context switch
     /// between compiled code and emulated state
-    pub fn named_word(id: usize) -> Value {
+    pub fn var_word(&mut self, id: usize) -> Variable {
         todo!();
     }
 
-    /// Create a new 16-bit named valued. User provided names are used for the context switch
-    /// between compiled code and emulated state
-    pub fn named_halfword(id: usize) -> Value {
-        todo!();
+    pub fn label(&mut self) -> Label {
+        self.e.gen_label()
     }
 
-    /// Create a new 16-bit named valued. User provided names are used for the context switch
-    /// between compiled code and emulated state
-    pub fn named_byte(id: usize) -> Value {
-        todo!()
-    }
-
-    /// Create new temporary 32-bit value. Temporary values are used for operations but won't
-    /// persist past the execution of the code block
-    pub fn temp_word() -> Value {
-        todo!()
-    }
-
-    /// Create new temporary 16-bit value. Temporary values are used for operations but won't
-    /// persist past the execution of the code block
-    pub fn temp_halfword() -> Value {
-        todo!()
-    }
-
-    /// Create new temporary 8-bit value. Temporary values are used for operations but won't
-    /// persist past the execution of the code block   
-    pub fn temp_byte() -> Value {
-        todo!()
-    }
-
-    pub fn gen_label() -> Label {
-        todo!()
-    }
-
-    pub fn bind_label() -> Label {
-        todo!()
+    pub fn bind(&mut self, label: Label) -> &mut Self {
+        self.e.bind_label(label);
+	self
     }
 
     /// Does it make sense to have different funcs for each of these?
-    pub fn add_word(dest: Value, op: Value) {
+    pub fn add_reg(&mut self, dest: Variable, rn: Variable, update_flags: bool) -> &mut Self {
         todo!();
     }
 
-    pub fn add_halfword(dest: Value, op: Value) {
+    pub fn add_imm(&mut self, dest: Variable, imm: i32, update_flags: bool) -> &mut Self {
+	todo!();
+    }
+    
+    pub fn jz(&mut self, label: Label) -> &mut Self {
         todo!();
     }
 
-    pub fn add_byte(dest: Value, op: Value) {
+    pub fn jnz(&mut self, label: Label) -> &mut Self {
         todo!();
     }
 
-    pub fn read_mem(dest: Value, addr: Address) {
+    pub fn jc(&mut self, label: Label) -> &mut Self {
         todo!();
     }
 
-    pub fn write_mem(addr: Address, src: Value) {
+    pub fn jnc(&mut self, label: Label) -> &mut Self {
+        todo!();
+    }
+
+    pub fn jn(&mut self, label: Label) -> &mut Self {
+        todo!();
+    }
+
+    pub fn jnn(&mut self, label: Label) -> &mut Self {
+        todo!();
+    }
+
+    pub fn jv(&mut self, label: Label) -> &mut Self {
+        todo!();
+    }
+
+    pub fn jnv(&mut self, label: Label) -> &mut Self {
+        todo!();
+    }
+
+    pub fn jmp(&mut self, label: Label) -> &mut Self {
         todo!();
     }
 }
-
