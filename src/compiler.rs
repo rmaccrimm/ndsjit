@@ -1,7 +1,9 @@
+pub mod emitter;
+pub mod execbuffer;
+
 // The JIT compiler interface used to implement the CodeGen trait, abstracts over the x86_64
 // interface handled by the Emitter
-use crate::asm::execbuffer::ExecBuffer;
-use crate::ir::VReg;
+use execbuffer::ExecBuffer;
 
 /// Should address be one of these?
 pub enum DataType {
@@ -43,19 +45,19 @@ impl CompilerX64 {
 
     /// Create a new 32-bit named valued. User provided names are used for the context switch
     /// between compiled code and emulated state
-    pub fn named_word(name: VReg) -> Value {
+    pub fn named_word(id: usize) -> Value {
         todo!();
     }
 
     /// Create a new 16-bit named valued. User provided names are used for the context switch
     /// between compiled code and emulated state
-    pub fn named_halfword(name: VReg) -> Value {
+    pub fn named_halfword(id: usize) -> Value {
         todo!();
     }
 
     /// Create a new 16-bit named valued. User provided names are used for the context switch
     /// between compiled code and emulated state
-    pub fn named_byte(name: VReg) -> Value {
+    pub fn named_byte(id: usize) -> Value {
         todo!()
     }
 
@@ -106,3 +108,4 @@ impl CompilerX64 {
         todo!();
     }
 }
+

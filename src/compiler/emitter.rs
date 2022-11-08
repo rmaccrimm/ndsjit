@@ -1,6 +1,8 @@
 use std::mem;
 use std::{collections::HashMap, vec::Vec};
 
+use super::execbuffer::ExecBuffer;
+
 #[derive(Copy, Clone, Debug, PartialEq)]
 enum OperandSize {
     Byte = 8,
@@ -98,10 +100,7 @@ impl Address {
         Address {
             base,
             op_mod: Mod::from_disp(displacement),
-            index: Some(Index {
-                reg: index,
-                scale: scale,
-            }),
+            index: Some(Index { reg: index, scale }),
             disp: displacement,
         }
     }
@@ -175,6 +174,15 @@ impl EmitterX64 {
         println!();
     }
 
+    pub fn get_exec_buffer(&mut self) -> Option<ExecBuffer> {
+        self.resolve_jmps();
+        if self.buf.len() > 0 {
+            Some(ExecBuffer::from_vec(&mut self.buf).unwrap())
+        } else {
+            None
+        }
+    }
+
     pub fn gen_label(&mut self) -> Label {
         let id = self.labels.len();
         let label = Label { id, index: None };
@@ -217,9 +225,34 @@ impl EmitterX64 {
         self.emit_modrm_addr(opcode, dest, src)
     }
 
+    pub fn cmp_reg_imm(&mut self, reg: RegX64, imm: i32) -> &mut Self {
+	self.emit_rex_reg(RegX64::new(0, Quadword), reg);
+        if reg.value == 0 {
+            let mut imm_size = reg.size;
+            if reg.size == Quadword {
+                // maximum immediate value size is 32-bits
+                imm_size = Doubleword
+            } else if reg.size == Word {
+                self.buf.push(PREF_16B);
+            }
+            let opcode = if reg.size == Byte { 0x3c } else { 0x03d };
+            self.buf.push(opcode);
+            self.emit_imm_data(imm as i64, imm_size);
+        } else {
+            // let opcode = if src.size == Byte { 0x3c } else { 0x };
+            if reg.size == Quadword {}
+        }
+        self
+    }
+
+    pub fn cmp_reg_reg(&mut self, lhs: RegX64, rhs: RegX64) -> &mut Self {
+        todo!()
+    }
+
     /// The target label is simply embeded as an identifier, which will later be resolved to a
     /// relative displacement
     fn emit_jmp(&mut self, opcode: u8, conditional: bool, target: Label) -> &mut Self {
+        self.jumps.push(self.buf.len());
         if conditional {
             self.buf.push(PREF_COND_JMP);
         }
@@ -235,11 +268,15 @@ impl EmitterX64 {
             } else {
                 i + 1
             };
+            // A 32-bit relative jump is assumed
             let label_bytes = &self.buf[label_ind..label_ind + 4];
             let label_id = u32::from_le_bytes(label_bytes.try_into().unwrap()) as usize;
             let target_ind =
                 self.labels.get(&label_id).unwrap().index.expect("Found unbound label");
-            let rel_jump = (target_ind as i32) - (i as i32);
+            // The instruction pointer points to the next instruction, so encoded label
+            // position + 4 bytes
+            let rel_jump = (target_ind as i32) - ((label_ind + 4) as i32);
+            dbg!(rel_jump);
             for (i, &b) in rel_jump.to_le_bytes().iter().enumerate() {
                 self.buf[label_ind + i] = b;
             }
@@ -344,6 +381,7 @@ impl EmitterX64 {
         self.emit_imm_data(imm as i64, Doubleword)
     }
 
+    /// TODO - is there any reason to support 64-bit values?
     fn emit_imm_data(&mut self, imm: i64, size: OperandSize) -> &mut Self {
         match size {
             Byte => self.buf.extend_from_slice(&(imm as i8).to_le_bytes()),
@@ -432,6 +470,9 @@ impl EmitterX64 {
         self
     }
 }
+
+// Used as a dummy parameter for some single operand instructions
+const NO_REG: RegX64 = RegX64::new(0, Doubleword);
 
 // TODO - Are high bytes needed
 pub const AL: RegX64 = RegX64::new(0, Byte);
@@ -895,9 +936,23 @@ mod tests {
     }
 
     #[test]
-    fn test_jumps_to_labels() {
-	use super::super::execbuffer::ExecBuffer;
-	let e = EmitterX64::new();
+    fn test_cmp_reg_imm() {
+	assert_emit_eq!(cmp_reg_imm(RAX, 19845839), 0x48, 0x3d, 0xcf, 0xd2, 0x2e, 0x01);
+	assert_emit_eq!(cmp_reg_imm(EAX, -192948), 0x3d, 0x4c, 0x0e, 0xfd, 0xff);
+	assert_emit_eq!(cmp_reg_imm(AX, 25565), 0x66, 0x3d, 0xdd, 0x63);
+	assert_emit_eq!(cmp_reg_imm(AL, -128), 0x3c, 0x80);
+					
+	assert_emit_eq!(cmp_reg_imm(R11, 93843), 0x49, 0x81, 0xFB, 0x93, 0x6E, 0x01, 0x00);
+	assert_emit_eq!(cmp_reg_imm(EDI, -19), 0x83, 0xff, 0xed);
+	assert_emit_eq!(cmp_reg_imm(SP, 199), 0x66, 0x81, 0xfc, 0xc4, 0x00);
+	assert_emit_eq!(cmp_reg_imm(CL, 14), 0x80, 0xF9, 0x0E);
+	assert_emit_eq!(cmp_reg_imm(R13B, -23), 0x41, 0x80, 0xFD, 0xE9);
+    }
+
+    #[test]
+    fn test_jump_to_label_loop() {
+	let mut e = EmitterX64::new();
+	
 	let lp = e.gen_label();
 	e.mov_reg_imm(R10, 5)
 	    .mov_reg_imm(R11, 2)
@@ -907,8 +962,36 @@ mod tests {
 	    .jnz(lp)
 	    .mov_reg_reg(RAX, R11)
 	    .ret();
+	let buf = e.get_exec_buffer().unwrap();
 	e.hex_dump();
-	let buf = ExecBuffer::from_vec(e.buf).unwrap();
+	unsafe {
+	    let f: unsafe extern "C" fn() -> u32 = mem::transmute(buf.ptr);
+	    let res = f();
+	    assert_eq!(res, 64);
+	}
+    }
+
+    #[ignore]
+    #[test]
+    fn test_jump_to_label_conditional() {
+	use crate::abi::VREG_ADDR_REG;
+	let mut e = EmitterX64::new();
+	let l_else = e.gen_label();
+	let l_then = e.gen_label();
+
+	// If input > 10, add 9, else add 7
+	e.cmp_reg_imm(VREG_ADDR_REG, 10)
+	    // .jle(l_else)
+	    .mov_reg_imm(RSI, 9)
+	    .jmp(l_then)
+	    .bind_label(l_else)
+	    .mov_reg_imm(RSI, 7)
+	    .bind_label(l_then)
+	    .add_reg_reg(VREG_ADDR_REG, RSI)
+	    .mov_reg_reg(RAX, RSI)
+	    .ret();
+	let buf = e.get_exec_buffer().unwrap();
+	e.hex_dump();
 	unsafe {
 	    let f: unsafe extern "C" fn() -> u32 = mem::transmute(buf.ptr);
 	    let res = f();

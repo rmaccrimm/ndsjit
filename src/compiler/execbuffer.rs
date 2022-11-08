@@ -24,7 +24,7 @@ pub struct ExecBuffer {
 
 impl ExecBuffer {
     #[cfg(target_os = "windows")]
-    pub fn from_vec(code: Vec<u8>) -> Result<ExecBuffer, Error> {
+    pub fn from_vec(code: &mut Vec<u8>) -> Result<ExecBuffer, Error> {
         unsafe {
             let mut system_info = SYSTEM_INFO::default();
             GetSystemInfo(&mut system_info as *mut SYSTEM_INFO);
@@ -60,7 +60,7 @@ impl ExecBuffer {
     }
 
     #[cfg(target_os = "linux")]
-    pub fn from_vec(code: Vec<u8>) -> Result<ExecBuffer, Error> {
+    pub fn from_vec(code: &mut Vec<u8>) -> Result<ExecBuffer, Error> {
         unsafe {
             let buf = mmap(
                 ptr::null_mut(),
