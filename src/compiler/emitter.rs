@@ -226,7 +226,7 @@ impl EmitterX64 {
     }
 
     pub fn cmp_reg_imm(&mut self, reg: RegX64, imm: i32) -> &mut Self {
-	self.emit_rex_reg(RegX64::new(0, Quadword), reg);
+        self.emit_rex_reg(RegX64::new(0, Doubleword), reg);
         if reg.value == 0 {
             let mut imm_size = reg.size;
             if reg.size == Quadword {
@@ -257,7 +257,8 @@ impl EmitterX64 {
             self.buf.push(PREF_COND_JMP);
         }
         self.buf.push(opcode);
-        self.buf.extend_from_slice(&(target.id as u32).to_le_bytes());
+        self.buf
+            .extend_from_slice(&(target.id as u32).to_le_bytes());
         self
     }
 
@@ -271,8 +272,12 @@ impl EmitterX64 {
             // A 32-bit relative jump is assumed
             let label_bytes = &self.buf[label_ind..label_ind + 4];
             let label_id = u32::from_le_bytes(label_bytes.try_into().unwrap()) as usize;
-            let target_ind =
-                self.labels.get(&label_id).unwrap().index.expect("Found unbound label");
+            let target_ind = self
+                .labels
+                .get(&label_id)
+                .unwrap()
+                .index
+                .expect("Found unbound label");
             // The instruction pointer points to the next instruction, so encoded label
             // position + 4 bytes
             let rel_jump = (target_ind as i32) - ((label_ind + 4) as i32);
@@ -447,7 +452,8 @@ impl EmitterX64 {
         // ModR/M byte and SIB byte
         match addr.index {
             None => {
-                self.buf.push(mod_rm_byte(addr.op_mod, reg.value(), addr.base.value()));
+                self.buf
+                    .push(mod_rm_byte(addr.op_mod, reg.value(), addr.base.value()));
                 // R/M = 100b (RSP and R12) is used to indicate SIB addressing mode, so if one of
                 // these is needed as the ptr reg, encode as SIB with no index, (sib = 0x24)
                 if addr.base.modrm_bits() == SIB_RM {
@@ -458,7 +464,8 @@ impl EmitterX64 {
                 // Indicates no index, so cannot be used as an index
                 assert!(index.reg.value() != RSP.value());
                 self.buf.push(mod_rm_byte(addr.op_mod, reg.value(), SIB_RM));
-                self.buf.push(sib_byte(index.scale as u8, index.reg.value(), addr.base.value()));
+                self.buf
+                    .push(sib_byte(index.scale as u8, index.reg.value(), addr.base.value()));
             }
         }
         // Displacements
@@ -937,65 +944,64 @@ mod tests {
 
     #[test]
     fn test_cmp_reg_imm() {
-	assert_emit_eq!(cmp_reg_imm(RAX, 19845839), 0x48, 0x3d, 0xcf, 0xd2, 0x2e, 0x01);
-	assert_emit_eq!(cmp_reg_imm(EAX, -192948), 0x3d, 0x4c, 0x0e, 0xfd, 0xff);
-	assert_emit_eq!(cmp_reg_imm(AX, 25565), 0x66, 0x3d, 0xdd, 0x63);
-	assert_emit_eq!(cmp_reg_imm(AL, -128), 0x3c, 0x80);
-					
-	assert_emit_eq!(cmp_reg_imm(R11, 93843), 0x49, 0x81, 0xFB, 0x93, 0x6E, 0x01, 0x00);
-	assert_emit_eq!(cmp_reg_imm(EDI, -19), 0x83, 0xff, 0xed);
-	assert_emit_eq!(cmp_reg_imm(SP, 199), 0x66, 0x81, 0xfc, 0xc4, 0x00);
-	assert_emit_eq!(cmp_reg_imm(CL, 14), 0x80, 0xF9, 0x0E);
-	assert_emit_eq!(cmp_reg_imm(R13B, -23), 0x41, 0x80, 0xFD, 0xE9);
+        assert_emit_eq!(cmp_reg_imm(RAX, 19845839), 0x48, 0x3d, 0xcf, 0xd2, 0x2e, 0x01);
+        assert_emit_eq!(cmp_reg_imm(EAX, -192948), 0x3d, 0x4c, 0x0e, 0xfd, 0xff);
+        assert_emit_eq!(cmp_reg_imm(AX, 25565), 0x66, 0x3d, 0xdd, 0x63);
+        assert_emit_eq!(cmp_reg_imm(AL, -128), 0x3c, 0x80);
+                        
+        assert_emit_eq!(cmp_reg_imm(R11, 93843), 0x49, 0x81, 0xFB, 0x93, 0x6E, 0x01, 0x00);
+        assert_emit_eq!(cmp_reg_imm(EDI, -19), 0x83, 0xff, 0xed);
+        assert_emit_eq!(cmp_reg_imm(SP, 199), 0x66, 0x81, 0xfc, 0xc4, 0x00);
+        assert_emit_eq!(cmp_reg_imm(CL, 14), 0x80, 0xF9, 0x0E);
+        assert_emit_eq!(cmp_reg_imm(R13B, -23), 0x41, 0x80, 0xFD, 0xE9);
     }
 
     #[test]
     fn test_jump_to_label_loop() {
-	let mut e = EmitterX64::new();
-	
-	let lp = e.gen_label();
-	e.mov_reg_imm(R10, 5)
-	    .mov_reg_imm(R11, 2)
-	    .bind_label(lp)
-	    .add_reg_reg(R11, R11)
-	    .sub_reg_imm32(R10, 1)
-	    .jnz(lp)
-	    .mov_reg_reg(RAX, R11)
-	    .ret();
-	let buf = e.get_exec_buffer().unwrap();
-	e.hex_dump();
-	unsafe {
-	    let f: unsafe extern "C" fn() -> u32 = mem::transmute(buf.ptr);
-	    let res = f();
-	    assert_eq!(res, 64);
-	}
+        let mut e = EmitterX64::new();
+        
+        let lp = e.gen_label();
+        e.mov_reg_imm(R10, 5)
+            .mov_reg_imm(R11, 2)
+            .bind_label(lp)
+            .add_reg_reg(R11, R11)
+            .sub_reg_imm32(R10, 1)
+            .jnz(lp)
+            .mov_reg_reg(RAX, R11)
+            .ret();
+        let buf = e.get_exec_buffer().unwrap();
+        e.hex_dump();
+        unsafe {
+            let f: unsafe extern "C" fn() -> u32 = mem::transmute(buf.ptr);
+            let res = f();
+            assert_eq!(res, 64);
+        }
     }
 
-    #[ignore]
     #[test]
     fn test_jump_to_label_conditional() {
-	use crate::abi::VREG_ADDR_REG;
-	let mut e = EmitterX64::new();
-	let l_else = e.gen_label();
-	let l_then = e.gen_label();
+        use crate::abi::VREG_ADDR_REG;
+        let mut e = EmitterX64::new();
+        let l_else = e.gen_label();
+        let l_then = e.gen_label();
 
-	// If input > 10, add 9, else add 7
-	e.cmp_reg_imm(VREG_ADDR_REG, 10)
-	    // .jle(l_else)
-	    .mov_reg_imm(RSI, 9)
-	    .jmp(l_then)
-	    .bind_label(l_else)
-	    .mov_reg_imm(RSI, 7)
-	    .bind_label(l_then)
-	    .add_reg_reg(VREG_ADDR_REG, RSI)
-	    .mov_reg_reg(RAX, RSI)
-	    .ret();
-	let buf = e.get_exec_buffer().unwrap();
-	e.hex_dump();
-	unsafe {
-	    let f: unsafe extern "C" fn() -> u32 = mem::transmute(buf.ptr);
-	    let res = f();
-	    assert_eq!(res, 64);
-	}
+        // If input > 10, add 9, else add 7
+        e.cmp_reg_imm(VREG_ADDR_REG, 10)
+            // .jle(l_else)
+            .mov_reg_imm(RSI, 9)
+            .jmp(l_then)
+            .bind_label(l_else)
+            .mov_reg_imm(RSI, 7)
+            .bind_label(l_then)
+            .add_reg_reg(VREG_ADDR_REG, RSI)
+            .mov_reg_reg(RAX, RSI)
+            .ret();
+        let buf = e.get_exec_buffer().unwrap();
+        e.hex_dump();
+        unsafe {
+            let f: unsafe extern "C" fn() -> u32 = mem::transmute(buf.ptr);
+            let res = f();
+            assert_eq!(res, 64);
+        }
     }
 }
