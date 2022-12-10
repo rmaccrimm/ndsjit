@@ -1,5 +1,5 @@
 use super::compiler::CompilerX64;
-use super::disasm::armv4t::instruction::{DataProc, DataProcOp, Cond};
+use super::disasm::armv4t::instruction::{Cond, DataProc, DataProcOp};
 
 pub trait CodeGen {
     fn codegen(&self, cc: &mut CompilerX64);
@@ -28,19 +28,19 @@ impl CodeGen for DataProc {
                 }
                 Cond::LS => cc.jnc(end).jz(end),
                 Cond::GE => {
-		    // Skip if N != V
+                    // Skip if N != V
                     // => (V and ~N) or (~V and N)
-		    let not_v = cc.label();
+                    let not_v = cc.label();
                     let start = cc.label();
-		    cc.jnv(not_v)
-			.jnn(end)
-			.jmp(start)
-			.bind(not_v)
-			.jn(end)
-			.bind(start)
+                    cc.jnv(not_v)
+                        .jnn(end)
+                        .jmp(start)
+                        .bind(not_v)
+                        .jn(end)
+                        .bind(start)
                 }
                 Cond::LT => {
-		    // Skip if N == V
+                    // Skip if N == V
                     // => (V and N) or (~V and ~N)
                     let not_v = cc.label();
                     let start = cc.label();
@@ -50,53 +50,59 @@ impl CodeGen for DataProc {
                         .bind(not_v)
                         .jnn(end)
                         .bind(start)
-		},
+                }
                 Cond::GT => {
-		    // Z == 0 and N == V
-		    // Skip if Z or N != V
-		    cc.jz(end);
-		    let not_v = cc.label();
+                    // Z == 0 and N == V
+                    // Skip if Z or N != V
+                    cc.jz(end);
+                    let not_v = cc.label();
                     let start = cc.label();
-		    cc.jnv(not_v)
-			.jnn(end)
-			.jmp(start)
-			.bind(not_v)
-			.jn(end)
-			.bind(start)
-		},
+                    cc.jnv(not_v)
+                        .jnn(end)
+                        .jmp(start)
+                        .bind(not_v)
+                        .jn(end)
+                        .bind(start)
+                }
                 Cond::LE => {
-		    // Z == 1 or N != V
-		    // Skip if ~Z and N == V
-		    let not_v = cc.label();
+                    // Z == 1 or N != V
+                    // Skip if ~Z and N == V
+                    let not_v = cc.label();
                     let eq = cc.label();
-		    let start = cc.label();
+                    let start = cc.label();
                     cc.jnv(not_v)
                         .jnn(start) // V and ~N
-			.jmp(eq)
+                        .jmp(eq)
                         .bind(not_v)
                         .jn(start) // ~V and N
                         .bind(eq)
-			.jnz(end)
-			.bind(start)
-		}
+                        .jnz(end)
+                        .bind(start)
+                }
             };
         }
-	match self.op {
-	    DataProcOp::ADD => {
-		match self.imm {
-		    None => {
-			let dest = cc.var_word(self.regs.dest.unwrap());
-			let rn = cc.var_word(self.regs.rn.unwrap());
-			cc.add_reg(dest, rn, self.update_flags);
-		    },
-		    Some(imm) => {
-			let dest = cc.var_word(self.regs.dest.unwrap());
-			cc.add_imm(dest, imm, self.update_flags);
-		    },
-		}
-	    },
-	    _ => todo!(),
-	};
-	cc.bind(end);
+        match self.op {
+            DataProcOp::ADD => match self.imm {
+                None => {
+                    let dest = cc.var_word(self.regs.dest.unwrap());
+                    let rn = cc.var_word(self.regs.rn.unwrap());
+                    cc.add_reg(dest, rn, self.update_flags);
+                }
+                Some(imm) => {
+                    let dest = cc.var_word(self.regs.dest.unwrap());
+                    cc.add_imm(dest, imm, self.update_flags);
+                }
+            },
+            _ => todo!(),
+        };
+        cc.bind(end);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_eq() {
+        // First - need to be able to set flags -> cmp
     }
 }
