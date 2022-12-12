@@ -1,4 +1,6 @@
 use cranelift::prelude::InstBuilder;
+use ndsjit::cpu::arm7::InstrMode;
+use std::fmt::Binary;
 use std::mem;
 
 use cranelift::codegen::ir::immediates::Offset32;
@@ -6,7 +8,7 @@ use cranelift::codegen::ir::types::{I32, I64};
 use cranelift::codegen::ir::{AbiParam, Endianness, Function, MemFlags, Signature, UserFuncName};
 use cranelift::codegen::isa::CallConv;
 use cranelift::codegen::verifier::{verify_function, VerifierErrors};
-use cranelift::codegen::{dbg, settings};
+use cranelift::codegen::{dbg, settings, Context};
 use cranelift::frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{self, Module};
@@ -15,6 +17,64 @@ use cranelift_module::{self, Module};
 #[repr(C)]
 struct VMState {
     pub regs: [u32; 4],
+}
+
+struct CompiledCode {
+    ptr: *const u8,
+}
+
+impl CompiledCode {
+    fn from_ptr(ptr: *const u8) -> Self {
+        Self { ptr }
+    }
+
+    unsafe fn call(&self, vm_state: &mut VMState) {
+        let func: unsafe extern "C" fn(*mut u32) = mem::transmute(self.ptr);
+        func(vm_state.regs.as_mut_ptr());
+    }
+}
+
+pub struct Instruction {}
+
+struct InstrTranslator {
+    pub module: JITModule,
+    pub ctx: Context,
+    pub builder_ctx: FunctionBuilderContext,
+}
+
+impl Default for InstrTranslator {
+    fn default() -> Self {
+        let jit_builder = JITBuilder::new(cranelift_module::default_libcall_names()).unwrap();
+        let module = JITModule::new(jit_builder);
+        let ctx = module.make_context();
+        Self {
+            module,
+            ctx,
+            builder_ctx: FunctionBuilderContext::new(),
+        }
+    }
+}
+
+impl InstrTranslator {
+    fn translate_block(&mut self, decoder: &mut BinaryDecoder) {
+        todo!()
+    }
+
+    fn translate_instr(instr: Instruction) {
+        todo!()
+    }
+}
+
+struct BinaryDecoder<'a> {
+    data: &'a [u8],
+    pos: usize,
+    mode: InstrMode,
+}
+
+impl BinaryDecoder<'_> {
+    fn next_instr(&mut self) {
+        todo!();
+    }
 }
 
 fn main() -> Result<(), String> {
@@ -38,14 +98,13 @@ fn main() -> Result<(), String> {
     let mut builder = FunctionBuilder::new(&mut ctx.func, &mut builder_ctx);
 
     let block = builder.create_block();
-    let st_addr = Variable::from_u32(0);
-    builder.declare_var(st_addr, I64);
     builder.append_block_params_for_function_params(block);
 
     builder.switch_to_block(block);
     builder.seal_block(block);
 
     let base = builder.block_params(block)[0];
+
     let offset = Offset32::new(0);
     let flags = MemFlags::trusted().with_endianness(Endianness::Little);
     let reg0 = builder.ins().load(I32, flags, base, offset);
