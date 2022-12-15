@@ -1,15 +1,13 @@
 use cranelift::prelude::InstBuilder;
-use ndsjit::cpu::arm7::InstrMode;
-use std::fmt::Binary;
 use std::mem;
 
 use cranelift::codegen::ir::immediates::Offset32;
-use cranelift::codegen::ir::types::{I32, I64};
-use cranelift::codegen::ir::{AbiParam, Endianness, Function, MemFlags, Signature, UserFuncName};
+use cranelift::codegen::ir::types::I32;
+use cranelift::codegen::ir::{AbiParam, Endianness, MemFlags, Signature};
 use cranelift::codegen::isa::CallConv;
-use cranelift::codegen::verifier::{verify_function, VerifierErrors};
-use cranelift::codegen::{dbg, settings, Context};
-use cranelift::frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
+use cranelift::codegen::verifier::verify_function;
+use cranelift::codegen::{settings, Context};
+use cranelift::frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{self, Module};
 
@@ -71,7 +69,7 @@ impl InstrTranslator {
 struct BinaryDecoder<'a> {
     data: &'a [u8],
     pos: usize,
-    mode: InstrMode,
+    mode: bool,
 }
 
 impl BinaryDecoder<'_> {

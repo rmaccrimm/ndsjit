@@ -54,14 +54,12 @@ pub enum ImmValue {
 
 #[derive(Copy, Clone, Debug)]
 pub enum Operand {
-    Reg {
-        reg: Register, 
-        shift: Option<Shift>
-    },
+    Reg { reg: Register, shift: Option<Shift> },
     Imm(ImmValue),
 }
 
-pub enum Op {    
+#[derive(Copy, Clone, Debug)]
+pub enum Op {
     UNDEFINED,
     ADC,
     ADCS,
@@ -504,7 +502,7 @@ const MAX_NUM_OPERANDS: usize = 3;
 
 #[derive(Copy, Clone, Debug)]
 pub struct Instruction {
-    cond: Cond
-    op: Op
-    operands: [Operand; MAX_NUM_OPERANDS]
+    cond: Cond,
+    op: Op,
+    operands: [Operand; MAX_NUM_OPERANDS],
 }
