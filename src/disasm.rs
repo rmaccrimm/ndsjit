@@ -1,6 +1,5 @@
-pub mod armv4t;
-use super::ir::Opcode;
-use armv4t::*;
+pub mod instruction;
+mod tests;
 use std::ops::Range;
 
 /// Get value of bit in positions start..end (inclusive)
@@ -35,7 +34,7 @@ pub fn try_disasm_thumb(addr: u32, instr_bytes: &[u8; 2]) -> Option<Opcode> {
 
 // Decode branching instruction (b, bl, blx)
 // fn disasm_b_arm(addr: u32, instr: u32) -> Opcode {
-    
+
 // }
 
 fn disasm_ldr_str_arm(addr: u32, instr: u32) -> Opcode {

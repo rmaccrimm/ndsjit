@@ -1,246 +1,510 @@
-pub mod instruction;
-use super::{bit, bits};
-use crate::ir::{Address::*, Offset::*, Opcode, Opcode::*, VReg, VReg::*};
-
-/// Number of lookahead bytes in ARM mode
-const PC_LA_THUMB: u32 = 4;
-/// Number of lookahead bytes in THUMB mode
-const PC_LA_ARM: u32 = 8;
-
-/// Align an address to 32-bit boundary by zeroing out the lowest two bits
-fn word_align(addr: u32) -> u32 {
-    addr & !(0b11)
+#[derive(Copy, Clone, Debug)]
+pub enum Cond {
+    EQ,
+    NE,
+    CS,
+    CC,
+    MI,
+    PL,
+    VS,
+    VC,
+    HI,
+    LS,
+    GE,
+    LT,
+    GT,
+    LE,
 }
 
-// Branch with PC-relative offset
-pub fn branch_arm(instr: u32) -> Opcode {
-    // Should be signed - is this right?
-    let target = Relative(PC, Immediate(bits(instr, 0..23) << 4));
-    match bit(instr, 24) {
-        false => B(target),
-        true => BL(target),
-    }
+#[derive(Copy, Clone, Debug)]
+pub enum Register {
+    R0,
+    R1,
+    R2,
+    R3,
+    R4,
+    R5,
+    R6,
+    R7,
+    R8,
+    R9,
+    R10,
+    R11,
+    R12,
+    SP,
+    LR,
+    PC,
+    FLAGS,
 }
 
-pub fn ldr_imm_thumb(instr: u32) -> Opcode {
-    // Offset is in number of words, i.e. a multiple of 4
-    let offset = bits(instr, 6..10) << 2;
-    let reg = VReg::try_from(bits(instr, 0..2)).unwrap();
-    let base = VReg::try_from(bits(instr, 3..5)).unwrap();
-    LDR(reg, Relative(base, Immediate(offset)), None)
+#[derive(Copy, Clone, Debug)]
+pub enum Shift {
+    LSL,
+    LSR,
+    ASR,
+    ROR,
+    RRX,
 }
 
-pub fn ldr_imm_sp_thumb(instr: u32) -> Opcode {
-    let reg = VReg::try_from(bits(instr, 8..10)).unwrap();
-    // Offset is in number of words, i.e. a multiple of 4
-    let offset = bits(instr, 0..7) << 2;
-    LDR(reg, Relative(SP, Immediate(offset)), None) // signed?
+#[derive(Copy, Clone, Debug)]
+pub enum ImmValue {
+    Signed(i32),
+    Unsigned(u32),
 }
 
-pub fn ldr_imm_arm(instr: u32) -> Opcode {
-    panic!("Unimplemented instruction")
+#[derive(Copy, Clone, Debug)]
+pub enum Operand {
+    Reg {
+        reg: Register, 
+        shift: Option<Shift>
+    },
+    Imm(ImmValue),
 }
 
-pub fn ldr_literal_thumb(addr: u32, instr: u32) -> Opcode {
-    // LDR (literal)
-    let reg = VReg::try_from(bits(instr, 8..10)).unwrap();
-    // Offset is in number of words, i.e. a multiple of 4
-    let offset = bits(instr, 0..7) << 2;
-    // Encode PC-relative offsets as an absolute address, since emitted code won't have access
-    // to emulated PC
-    let pc = addr + PC_LA_THUMB;
-    return LDR(reg, Absolute(word_align(pc) + offset), None);
+pub enum Op {    
+    UNDEFINED,
+    ADC,
+    ADCS,
+    ADD,
+    ADDS,
+    ADDW,
+    ADR,
+    AND,
+    ANDS,
+    ASR,
+    ASRS,
+    B,
+    BFC,
+    BFI,
+    BIC,
+    BICS,
+    BKPT,
+    BL,
+    BLX,
+    BX,
+    BXJ,
+    CBNZ,
+    CBZ,
+    CDP,
+    CDP2,
+    CLREX,
+    CLZ,
+    CMN,
+    CMP,
+    CPS,
+    CPSID,
+    CPSIE,
+    DBG,
+    DMB,
+    DSB,
+    ENTERX,
+    EOR,
+    EORS,
+    ERET,
+    FLDMDBX,
+    FLDMIAX,
+    FSTMDBX,
+    FSTMIAX,
+    FSTMX,
+    HINT,
+    HVC,
+    ISB,
+    IT,
+    LDA,
+    LDAB,
+    LDAH,
+    LDAEX,  // A32
+    LDAEXB, // A32
+    LDAEXH, // A32
+    LDAEXD, // A32
+    LDC,
+    LDC2,
+    LDC2L,
+    LDCL,
+    LDM,
+    LDMDA,
+    LDMDB,
+    LDMIA,
+    LDMIB,
+    LDR,
+    LDRB,
+    LDRBT,
+    LDRD,
+    LDREX,
+    LDREXB,
+    LDREXD,
+    LDREXH,
+    LDRH,
+    LDRHT,
+    LDRSB,
+    LDRSBT,
+    LDRSH,
+    LDRSHT,
+    LDRT,
+    LEAVEX,
+    LSL,
+    LSLS,
+    LSR,
+    LSRS,
+    MCR,
+    MCR2,
+    MCRR,
+    MCRR2,
+    MLA,
+    MLS,
+    MOV,
+    MOVS,
+    MOVT,
+    MOVW,
+    MRC,
+    MRC2,
+    MRRC,
+    MRRC2,
+    MRS,
+    MSR,
+    MUL,
+    MULS,
+    MVN,
+    MVNS,
+    NOP,
+    ORN,
+    ORR,
+    ORRS,
+    PKHBT,
+    PKHTB,
+    PLD,
+    PLDW,
+    PLI,
+    POP,
+    PUSH,
+    QADD,
+    QADD16,
+    QADD8,
+    QASX,
+    QDADD,
+    QDSUB,
+    QSAX,
+    QSUB,
+    QSUB16,
+    QSUB8,
+    RBIT,
+    REV,
+    REV16,
+    REVSH,
+    RFE,
+    RFEDA,
+    RFEDB,
+    RFEIA,
+    RFEIB,
+    ROR,
+    RORS,
+    RRX,
+    RSB,
+    RSBS,
+    RSC,
+    SADD16,
+    SADD8,
+    SASX,
+    SBC,
+    SBCS,
+    SBFX,
+    SDIV,
+    SEL,
+    SETEND,
+    SEV,
+    SHADD16,
+    SHADD8,
+    SHASX,
+    SHSAX,
+    SHSUB16,
+    SHSUB8,
+    SMC,
+    SMLABB,
+    SMLABT,
+    SMLAD,
+    SMLADX,
+    SMLAL,
+    SMLALBB,
+    SMLALBT,
+    SMLALD,
+    SMLALDX,
+    SMLALTB,
+    SMLALTT,
+    SMLATB,
+    SMLATT,
+    SMLAWB,
+    SMLAWT,
+    SMLSD,
+    SMLSDX,
+    SMLSLD,
+    SMLSLDX,
+    SMMLA,
+    SMMLAR,
+    SMMLS,
+    SMMLSR,
+    SMMUL,
+    SMMULR,
+    SMUAD,
+    SMUADX,
+    SMULBB,
+    SMULBT,
+    SMULL,
+    SMULTB,
+    SMULTT,
+    SMULWB,
+    SMULWT,
+    SMUSD,
+    SMUSDT,
+    SMUSDX,
+    SRS,
+    SRSDA,
+    SRSDB,
+    SRSIA,
+    SRSIB,
+    SSAT,
+    SSAT16,
+    SSAX,
+    SSUB16,
+    SSUB8,
+    STC,
+    STC2,
+    STC2L,
+    STCL,
+    STL, // A32
+    STLB,
+    STLH,
+    STLEX,  // A32
+    STLEXB, // A32
+    STLEXH, // A32
+    STLEXD, // A32
+    STM,
+    STMBD,
+    STMDA,
+    STMDB,
+    STMIA,
+    STMIB,
+    STR,
+    STRB,
+    STRBT,
+    STRD,
+    STREX,
+    STREXB,
+    STREXD,
+    STREXH,
+    STRH,
+    STRHT,
+    STRT,
+    SUB,
+    SUBS,
+    SUBW,
+    SVC,
+    SWP,
+    SWPB,
+    SXTAB,
+    SXTAB16,
+    SXTAH,
+    SXTB,
+    SXTB16,
+    SXTH,
+    TBB,
+    TBH,
+    TEQ,
+    TRAP,
+    TRT,
+    TST,
+    UADD16,
+    UADD8,
+    UASX,
+    UBFX,
+    UDF,
+    UDIV,
+    UHADD16,
+    UHADD8,
+    UHASX,
+    UHSAX,
+    UHSUB16,
+    UHSUB8,
+    UMAAL,
+    UMLAL,
+    UMULL,
+    UQADD16,
+    UQADD8,
+    UQASX,
+    UQSAX,
+    UQSUB16,
+    UQSUB8,
+    USAD8,
+    USADA8,
+    USAT,
+    USAT16,
+    USAX,
+    USUB16,
+    USUB8,
+    UXTAB,
+    UXTAB16,
+    UXTAH,
+    UXTB,
+    UXTB16,
+    UXTH,
+    VABA,
+    VABAL,
+    VABD,
+    VABDL,
+    VABS,
+    VACGE,
+    VACGT,
+    VADD,
+    VADDHN,
+    VADDL,
+    VADDW,
+    VAND,
+    VBIC,
+    VBIF,
+    VBIT,
+    VBSL,
+    VCEQ,
+    VCGE,
+    VCGT,
+    VCLE,
+    VCLS,
+    VCLT,
+    VCLZ,
+    VCMP,
+    VCMPE,
+    VCNT,
+    VCVT,
+    VCVTA,
+    VCVTB,
+    VCVTM,
+    VCVTN,
+    VCVTP,
+    VCVTR,
+    VCVTT,
+    VDIV,
+    VDUP,
+    VEOR,
+    VEXT,
+    VFMA,
+    VFMS,
+    VFNMA,
+    VFNMS,
+    VHADD,
+    VHSUB,
+    VLD1,
+    VLD2,
+    VLD3,
+    VLD4,
+    VLDM,
+    VLDMDB,
+    VLDMIA,
+    VLDR,
+    VMAX,
+    VMAXNM,
+    VMIN,
+    VMINM,
+    VMLA,
+    VMLAL,
+    VMLS,
+    VMLSL,
+    VMOV,
+    VMOVL,
+    VMOVN,
+    VMRS,
+    VMSR,
+    VMUL,
+    VMULL,
+    VMVN,
+    VNEG,
+    VNMLA,
+    VNMLS,
+    VNMUL,
+    VORN,
+    VORR,
+    VPADAL,
+    VPADD,
+    VPADDL,
+    VPMAX,
+    VPMIN,
+    VPOP,
+    VPUSH,
+    VQABS,
+    VQADD,
+    VQDMLAL,
+    VQDMLSL,
+    VQDMULH,
+    VQDMULL,
+    VQMOVN,
+    VQMOVUN,
+    VQNEG,
+    VQRDMULH,
+    VQRSHL,
+    VQRSHRN,
+    VQRSHRUN,
+    VQSHL,
+    VQSHLU,
+    VQSHRN,
+    VQSHRUN,
+    VQSUB,
+    VRADDHN,
+    VRECPE,
+    VRECPS,
+    VREV16,
+    VREV32,
+    VREV64,
+    VRHADD,
+    VRHSUB,
+    VRINTA,
+    VRINTM,
+    VRINTN,
+    VRINTP,
+    VRINTR,
+    VRINTX,
+    VRINTZ,
+    VRSHL,
+    VRSHR,
+    VRSHRN,
+    VRSQRTE,
+    VRSQRTS,
+    VRSRA,
+    VRSUBHN,
+    VSEL,
+    VSHL,
+    VSHLL,
+    VSHR,
+    VSHRN,
+    VSLI,
+    VSQRT,
+    VSRA,
+    VSRI,
+    VST1,
+    VST2,
+    VST3,
+    VST4,
+    VSTM,
+    VSTMDB,
+    VSTMIA,
+    VSTR,
+    VSUB,
+    VSUBHN,
+    VSUBL,
+    VSUBW,
+    VSWP,
+    VTBL,
+    VTBX,
+    VTRN,
+    VTST,
+    VUZP,
+    VZIP,
+    WFE,
+    WFI,
+    YIELD,
 }
 
-pub fn ldr_literal_arm(addr: u32, instr: u32) -> Opcode {
-    panic!("Unimplemented instruction")
-}
+const MAX_NUM_OPERANDS: usize = 3;
 
-pub fn ldr_reg_thumb(instr: u32) -> Opcode {
-    let dest = VReg::try_from(bits(instr, 0..2)).unwrap();
-    let base = VReg::try_from(bits(instr, 3..5)).unwrap();
-    let index = VReg::try_from(bits(instr, 6..8)).unwrap();
-    LDR(dest, Relative(base, Index(index)), None)
-}
-
-pub fn ldr_reg_arm(instr: u32) -> Opcode {
-    panic!("Unimplemented instruction")
-}
-
-pub fn ldrb_imm_thumb(instr: u32) -> Opcode {
-    let offset = bits(instr, 6..10);
-    let reg = VReg::try_from(bits(instr, 0..2)).unwrap();
-    let base = VReg::try_from(bits(instr, 3..5)).unwrap();
-    LDRB(reg, Relative(base, Immediate(offset)), None)
-}
-
-pub fn ldrb_imm_arm(instr: u32) -> Opcode {
-    panic!("Unimplemented instruction")
-}
-
-pub fn ldrb_literal(addr: u32, instr: u32) -> Opcode {
-    panic!("Unimplemented instruction")
-}
-
-pub fn ldrb_reg_thumb(instr: u32) -> Opcode {
-    let dest = VReg::try_from(bits(instr, 0..2)).unwrap();
-    let base = VReg::try_from(bits(instr, 3..5)).unwrap();
-    let index = VReg::try_from(bits(instr, 6..8)).unwrap();
-    LDR(dest, Relative(base, Index(index)), None)
-}
-
-pub fn ldrb_reg_arm(instr: u32) -> Opcode {
-    panic!("Unimplemented instruction")
-}
-
-pub fn ldrbt(instr: u32) -> Opcode {
-    panic!("Unimplemented instruction")
-}
-
-pub fn ldrd_imm(instr: u32) -> Opcode {
-    panic!("Unimplemented instruction")
-}
-
-pub fn ldrd_literal(addr: u32, instr: u32) -> Opcode {
-    panic!("Unimplemented instruction")
-}
-
-pub fn ldrd_reg(instr: u32) -> Opcode {
-    panic!("Unimplemented instruction")
-}
-
-pub fn ldrex(instr: u32) -> Opcode {
-    panic!("Unimplemented instruction")
-}
-
-pub fn ldrexb(instr: u32) -> Opcode {
-    panic!("Unimplemented instruction")
-}
-
-pub fn ldrexd(instr: u32) -> Opcode {
-    panic!("Unimplemented instruction")
-}
-
-pub fn ldrexh(instr: u32) -> Opcode {
-    panic!("Unimplemented instruction")
-}
-
-pub fn ldrh_imm_thumb(instr: u32) -> Opcode {
-    let dest = VReg::try_from(bits(instr, 0..2)).unwrap();
-    let base = VReg::try_from(bits(instr, 3..5)).unwrap();
-    let offset = bits(instr, 6..10) << 1;
-    LDRH(dest, Relative(base, Immediate(offset)), None)
-}
-
-pub fn ldrh_imm_arm(instr: u32) -> Opcode {
-    panic!("Unimplemented instruction")
-}
-
-pub fn ldrh_literal(addr: u32, instr: u32) -> Opcode {
-    panic!("Unimplemented instruction")
-}
-
-pub fn ldrh_reg_thumb(instr: u32) -> Opcode {
-    let dest = VReg::try_from(bits(instr, 0..2)).unwrap();
-    let base = VReg::try_from(bits(instr, 3..5)).unwrap();
-    let index = VReg::try_from(bits(instr, 6..8)).unwrap();
-    LDRH(dest, Relative(base, Index(index)), None)
-}
-
-pub fn ldrh_reg_arm(instr: u32) -> Opcode {
-    panic!("Unimplemented instruction")
-}
-
-pub fn ldrht(instr: u32) -> Opcode {
-    panic!("Unimplemented instruction")
-}
-
-pub fn ldrsb_imm(instr: u32) -> Opcode {
-    panic!("Unimplemented instruction")
-}
-
-pub fn ldrsb_literal(addr: u32, instr: u32) -> Opcode {
-    panic!("Unimplemented instruction")
-}
-
-pub fn ldrsb_reg_thumb(instr: u32) -> Opcode {
-    let dest = VReg::try_from(bits(instr, 0..2)).unwrap();
-    let base = VReg::try_from(bits(instr, 3..5)).unwrap();
-    let index = VReg::try_from(bits(instr, 6..8)).unwrap();
-    LDRSB(dest, Relative(base, Index(index)), None)
-}
-
-pub fn ldrsb_reg_arm(instr: u32) -> Opcode {
-    panic!("Unimplemented instruction")
-}
-
-pub fn ldrsbt(instr: u32) -> Opcode {
-    panic!("Unimplemented instruction")
-}
-
-pub fn ldrsh_imm(instr: u32) -> Opcode {
-    panic!("Unimplemented instruction")
-}
-
-pub fn ldrsh_literal(addr: u32, instr: u32) -> Opcode {
-    panic!("Unimplemented instruction")
-}
-
-pub fn ldrsh_reg_thumb(instr: u32) -> Opcode {
-    let dest = VReg::try_from(bits(instr, 0..2)).unwrap();
-    let base = VReg::try_from(bits(instr, 3..5)).unwrap();
-    let index = VReg::try_from(bits(instr, 6..8)).unwrap();
-    LDRSH(dest, Relative(base, Index(index)), None)
-}
-
-pub fn ldrsh_reg_arm(instr: u32) -> Opcode {
-    panic!("Unimplemented instruction")
-}
-
-pub fn ldrsht(instr: u32) -> Opcode {
-    panic!("Unimplemented instruction")
-}
-
-pub fn ldrt(instr: u32) -> Opcode {
-    panic!("Unimplemented instruction")
-}
-
-pub fn str_imm_thumb(instr: u32) -> Opcode {
-    panic!("Unimplemented instruction")
-}
-
-pub fn str_imm_sp_thumb(instr: u32) -> Opcode {
-    panic!("Unimplemented instruction")
-}
-
-pub fn str_reg_thumb(instr: u32) -> Opcode {
-    panic!("Unimplemented instruction")
-}
-
-pub fn strb_imm_thumb(instr: u32) -> Opcode {
-    panic!("Unimplemented instruction")
-}
-
-pub fn strb_reg_thumb(instr: u32) -> Opcode {
-    panic!("Unimplemented instruction")
-}
-
-pub fn strh_imm_thumb(instr: u32) -> Opcode {
-    panic!("Unimplemented instruction")
-}
-
-pub fn strh_reg_thumb(instr: u32) -> Opcode {
-    panic!("Unimplemented instruction")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::word_align;
-
-    #[test]
-    fn test_word_align() {
-        assert_eq!(word_align(0x84abfe43), 0x84abfe40);
-        assert_eq!(word_align(0x7f), 0x7c);
-        assert_eq!(word_align(0x43a), 0x438);
-    }
+#[derive(Copy, Clone, Debug)]
+pub struct Instruction {
+    cond: Cond
+    op: Op
+    operands: [Operand; MAX_NUM_OPERANDS]
 }

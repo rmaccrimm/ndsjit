@@ -47,6 +47,7 @@ impl Default for InstrTranslator {
         let jit_builder = JITBuilder::new(cranelift_module::default_libcall_names()).unwrap();
         let module = JITModule::new(jit_builder);
         let ctx = module.make_context();
+
         Self {
             module,
             ctx,
@@ -56,11 +57,13 @@ impl Default for InstrTranslator {
 }
 
 impl InstrTranslator {
-    fn translate_block(&mut self, decoder: &mut BinaryDecoder) {
-        todo!()
+    fn translate_segment(&mut self, decoder: &mut BinaryDecoder) {
+        let int_type = self.module.target_config().pointer_type();
+        self.ctx.func.signature.params.push(AbiParam::new(int_type));
+        let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.builder_ctx);
     }
 
-    fn translate_instr(instr: Instruction) {
+    fn translate_instr(instr: Instruction, builder: &mut FunctionBuilder) {
         todo!()
     }
 }
