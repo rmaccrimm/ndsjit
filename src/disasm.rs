@@ -5,7 +5,7 @@ mod thumb;
 
 use arm::*;
 use armv4t::Instruction;
-use bits::bits;
+use bits::{bit, bits};
 use std::error::Error;
 use std::fmt::Display;
 
@@ -37,8 +37,12 @@ pub fn disassemble_arm(addr: u32, instr: u32) -> DisasmResult {
         0b1111 => arm_unconditional(instr),
         _ => match bits(instr, 25..27) {
             0b000 | 0b001 => arm_data_proc_and_misc(instr), // Containes some load/store as well
-            0b010 | 0b011 => arm_load_store(instr),
-            0b100 => arm_block_data_transer(instr),
+            0b010 => arm_load_store(instr),
+            0b011 => match bit(instr, 4) {
+                0 => arm_load_store(instr),
+                1 => arm_media(instr),
+            },
+            0b100 => arm_block_data_transfer(instr),
             0b101 => arm_branch(instr),
             0b110 | 0b111 => arm_coprocessor(instr),
             _ => panic!(),
@@ -47,5 +51,7 @@ pub fn disassemble_arm(addr: u32, instr: u32) -> DisasmResult {
 }
 
 pub fn disassemble_thumb(addr: u32, instr: u16) -> DisasmResult {
-    todo!()
+    // TODO - there are 32-bit THUMB encodings as well? How will those be handled? Maybe it's kicked
+    // back out to the binary reader which will return the extra byte? Or we just always send 2 and
+    // only decode the first?
 }

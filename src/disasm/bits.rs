@@ -7,8 +7,8 @@ pub fn bits(word: u32, r: Range<usize>) -> u32 {
 }
 
 /// Get value of a single bit
-pub fn bit(word: u32, b: usize) -> bool {
-    (word >> b) & 1 == 1
+pub fn bit(word: u32, b: usize) -> u32 {
+    (word >> b) & 1
 }
 
 /// Align an address to 32-bit boundary by zeroing out the lowest two bits
