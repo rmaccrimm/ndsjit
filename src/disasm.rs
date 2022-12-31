@@ -41,11 +41,12 @@ pub fn disassemble_arm(addr: u32, instr: u32) -> DisasmResult {
             0b011 => match bit(instr, 4) {
                 0 => arm_load_store(instr),
                 1 => arm_media(instr),
+                _ => unreachable!(),
             },
             0b100 => arm_block_data_transfer(instr),
             0b101 => arm_branch(instr),
             0b110 | 0b111 => arm_coprocessor(instr),
-            _ => panic!(),
+            _ => unreachable!(),
         },
     }
 }
@@ -54,4 +55,5 @@ pub fn disassemble_thumb(addr: u32, instr: u16) -> DisasmResult {
     // TODO - there are 32-bit THUMB encodings as well? How will those be handled? Maybe it's kicked
     // back out to the binary reader which will return the extra byte? Or we just always send 2 and
     // only decode the first?
+    todo!();
 }

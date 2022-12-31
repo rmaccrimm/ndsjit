@@ -13,16 +13,14 @@ pub fn arm_data_proc_and_misc(instr: u32) -> DisasmResult {
     let op2 = bits(instr, 4..7);
     match op {
         0 => match op1 {
-            0b10000 |
-            0b10010 |
-            0b10100 | 
-            0b10110 => match op2 {
-                
-            }
+            // 10xx0
+            0b10000 | 0b10010 | 0b10100 | 0b10110 => match op2 {
+                _ => todo!(),
+            },
         },
         1 => match op1 {
-
-        }
+            _ => todo!(),
+        },
     }
 }
 
