@@ -9,6 +9,8 @@ use bits::{bit, bits};
 use std::error::Error;
 use std::fmt::Display;
 
+use self::armv4t::Cond;
+
 #[derive(Debug)]
 pub struct DisasmError {
     description: String,
@@ -19,6 +21,10 @@ impl DisasmError {
     fn new(description: &str, instr: u32) -> Self {
         let description = String::from(description);
         Self { description, instr }
+    }
+
+    fn unknown(instr: u32) -> Self {
+        Self::new("unkown instruction", instr)
     }
 }
 

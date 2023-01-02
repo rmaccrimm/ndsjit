@@ -16,7 +16,9 @@ fn word_align(addr: u32) -> u32 {
     addr & !(0b11)
 }
 
-fn bit_match(x: u32, pattern: &str) -> bool {
+/// Perform bitwise comparison against bit string matching pattern [01x]. Positions with an "x" can
+/// have any value, 0's and 1's must match exactly
+pub fn bit_match(x: u32, pattern: &str) -> bool {
     let mask =
         u32::from_str_radix(pattern.replace("0", "1").replace("x", "0").as_str(), 2).unwrap();
     let masked = x & mask;
