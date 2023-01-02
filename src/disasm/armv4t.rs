@@ -1,3 +1,6 @@
+use super::DisasmError;
+use std::convert::TryFrom;
+
 #[derive(Copy, Clone, Debug)]
 pub enum Cond {
     EQ,
@@ -14,6 +17,33 @@ pub enum Cond {
     LT,
     GT,
     LE,
+    AL,
+}
+
+impl TryFrom<u32> for Cond {
+    type Error = DisasmError;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        let cond = match value {
+            0 => Cond::EQ,
+            1 => Cond::NE,
+            2 => Cond::CS,
+            3 => Cond::CC,
+            4 => Cond::MI,
+            5 => Cond::PL,
+            6 => Cond::VS,
+            7 => Cond::VC,
+            8 => Cond::HI,
+            9 => Cond::LS,
+            10 => Cond::GE,
+            11 => Cond::LT,
+            12 => Cond::GT,
+            13 => Cond::LE,
+            14 => Cond::AL,
+            _ => return Err(DisasmError::new("invalid cond value", value)),
+        };
+        Ok(cond)
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -35,6 +65,33 @@ pub enum Register {
     LR,
     PC,
     FLAGS,
+}
+
+impl TryFrom<u32> for Register {
+    type Error = DisasmError;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        let reg = match value {
+            0 => Register::R0,
+            1 => Register::R1,
+            2 => Register::R2,
+            3 => Register::R3,
+            4 => Register::R4,
+            5 => Register::R5,
+            6 => Register::R6,
+            7 => Register::R7,
+            8 => Register::R8,
+            9 => Register::R9,
+            10 => Register::R10,
+            11 => Register::R11,
+            12 => Register::R12,
+            13 => Register::SP,
+            14 => Register::LR,
+            15 => Register::PC,
+            _ => return Err(DisasmError::new("invalid register value", value)),
+        };
+        Ok(reg)
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -502,7 +559,19 @@ const MAX_NUM_OPERANDS: usize = 3;
 
 #[derive(Copy, Clone, Debug)]
 pub struct Instruction {
-    cond: Cond,
-    op: Op,
-    operands: [Operand; MAX_NUM_OPERANDS],
+    pub cond: Cond,
+    pub op: Op,
+    pub operands: [Option<Operand>; MAX_NUM_OPERANDS],
+    pub set_flags: bool,
+}
+
+impl Default for Instruction {
+    fn default() -> Self {
+        Self {
+            cond: Cond::AL,
+            op: Op::NOP,
+            operands: [None; 3],
+            set_flags: false,
+        }
+    }
 }
