@@ -95,7 +95,7 @@ impl TryFrom<u32> for Register {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub enum Shift {
+pub enum ShiftType {
     LSL,
     LSR,
     ASR,
@@ -104,15 +104,41 @@ pub enum Shift {
 }
 
 #[derive(Copy, Clone, Debug)]
+/// TBD if this is actually useful. Maybe should have Signed(u32) instead (i.e. do the cast later)?
 pub enum ImmValue {
     Signed(i32),
     Unsigned(u32),
 }
 
 #[derive(Copy, Clone, Debug)]
+pub enum Shift {
+    RegShift {
+        shift_type: ShiftType,
+        shift_reg: Register,
+    },
+    ImmShift {
+        shift_type: ShiftType,
+        shift_amt: ImmValue,
+    },
+}
+
+#[derive(Copy, Clone, Debug)]
 pub enum Operand {
     Reg { reg: Register, shift: Option<Shift> },
     Imm(ImmValue),
+}
+
+impl Operand {
+    pub fn unshifted(reg: Register) -> Self {
+        Self::Reg { reg, shift: None }
+    }
+
+    pub fn shifted(reg: Register, shift: Shift) -> Self {
+        Self::Reg {
+            reg,
+            shift: Some(shift),
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
