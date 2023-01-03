@@ -1,4 +1,4 @@
-use super::armv4t::{Cond, Instruction, Op, Operand, Register};
+use super::armv4t::{Cond, ImmValue, Instruction, Op, Operand, Register, Shift, ShiftType};
 use super::bits::{bit, bit_match, bits};
 use super::{DisasmError, DisasmResult};
 
@@ -72,7 +72,137 @@ fn get_data_proc_op(op1: u32, op2: u32, imm: Option<u32>) -> Result<Op, DisasmEr
     Ok(op)
 }
 
+fn decode_imm_shift(shift_type: u32, imm5: u32) -> Shift {
+    match shift_type {
+        0b00 => Shift::ImmShift {
+            shift_type: ShiftType::LSL,
+            shift_amt: ImmValue::Unsigned(imm5),
+        },
+        0b01 => {
+            let shift_amt = if imm5 == 0 { 32 } else { imm5 };
+            Shift::ImmShift {
+                shift_type: ShiftType::LSR,
+                shift_amt: ImmValue::Unsigned(shift_amt),
+            }
+        }
+        0b10 => {
+            let shift_amt = if imm5 == 0 { 32 } else { imm5 };
+            Shift::ImmShift {
+                shift_type: ShiftType::ASR,
+                shift_amt: ImmValue::Unsigned(shift_amt),
+            }
+        }
+        0b11 => {
+            if imm5 == 0 {
+                Shift::ImmShift {
+                    shift_type: ShiftType::RRX,
+                    shift_amt: ImmValue::Unsigned(1),
+                }
+            } else {
+                Shift::ImmShift {
+                    shift_type: ShiftType::ROR,
+                    shift_amt: ImmValue::Unsigned(imm5),
+                }
+            }
+        }
+        _ => unreachable!(),
+    }
+}
+
 fn arm_data_proc_reg(instr: u32) -> DisasmResult {
+    let op1 = bits(instr, 20..24);
+    let op2 = bits(instr, 5..6);
+    let imm = bits(instr, 7..11);
+    let op = get_data_proc_op(op1, op2, Some(imm))?;
+
+    let result = Instruction::default();
+    result.op = op;
+    result.cond = Cond::try_from(instr)?;
+    result.set_flags = bit(instr, 20) == 1;
+
+    let rd = Register::try_from(bits(instr, 12..15))?;
+    let rn = Register::try_from(bits(instr, 16..19))?;
+    let rm = Register::try_from(bits(instr, 0..3))?;
+    let imm5 = bits(instr, 7..11);
+    let shift = decode_imm_shift(bits(instr, 5..6), imm5);
+
+    match op {
+        Op::MVN => {
+            result.operands[0] = Some(Operand::unshifted(rd));
+            result.operands[1] = Some(Operand::shifted(rm, shift));
+        }
+        Op::MOV | Op::RRX => {
+            result.operands[0] = Some(Operand::unshifted(rd));
+            result.operands[1] = Some(Operand::unshifted(rm));
+        }
+        Op::LSL | Op::LSR | Op::ASR | Op::ROR => {
+            // These instructions are actually the immediate versions, even though their encodings
+            // place them in the "data-processing (register)" category
+            result.operands[0] = Some(Operand::unshifted(rd));
+            result.operands[1] = Some(Operand::unshifted(rn));
+            result.operands[2] = Some(Operand::Imm(ImmValue::Unsigned(imm5)))
+        }
+        _ => {
+            result.operands[0] = Some(Operand::unshifted(rd));
+            result.operands[1] = Some(Operand::unshifted(rn));
+            result.operands[2] = Some(Operand::shifted(rm, shift));
+        }
+    }
+    Ok(result)
+}
+
+fn arm_data_proc_shift_reg(instr: u32) -> DisasmResult {
+    let op1 = bits(instr, 20..24);
+    let op2 = bits(instr, 5..6);
+    let op = get_data_proc_op(op1, op2, None)?;
+
+    let result = Instruction::default();
+    result.op = op;
+    result.cond = Cond::try_from(instr)?;
+    result.set_flags = bit(instr, 20) == 1;
+
+    let rd = Register::try_from(bits(instr, 12..15))?;
+    let rn = Register::try_from(bits(instr, 16..19))?;
+    let rm = Register::try_from(bits(instr, 0..3))?;
+    let rs = Register::try_from(bits(instr, 8..11))?;
+    let shift = Shift::RegShift {
+        shift_type: match bits(instr, 5..6) {
+            0b00 => ShiftType::LSL,
+            0b01 => ShiftType::LSR,
+            0b10 => ShiftType::ASR,
+            0b11 => ShiftType::ROR,
+        },
+        shift_reg: rs,
+    };
+
+    match op {
+        Op::MVN => {
+            result.operands[0] = Some(Operand::unshifted(rd));
+            result.operands[1] = Some(Operand::shifted(rm, shift));
+        }
+        Op::MOV | Op::RRX => {
+            return Err(DisasmError::new(
+                format!("{:?} op cannot be register-shifted", op).as_str(),
+                instr,
+            ));
+        }
+        Op::LSL | Op::LSR | Op::ASR | Op::ROR => {
+            // These instructions are actually the register versions, even though their encodings
+            // place them in the "data-processing (register-shifted register)" category.
+            result.operands[0] = Some(Operand::unshifted(rd));
+            result.operands[1] = Some(Operand::unshifted(rn));
+            result.operands[2] = Some(Operand::unshifted(rm));
+        }
+        _ => {
+            result.operands[0] = Some(Operand::unshifted(rd));
+            result.operands[1] = Some(Operand::unshifted(rn));
+            result.operands[2] = Some(Operand::shifted(rm, shift));
+        }
+    }
+    Ok(result)
+}
+
+fn arm_data_proc_imm(instr: u32) -> DisasmResult {
     let op1 = bits(instr, 20..24);
     let op2 = bits(instr, 5..6);
     let imm = bits(instr, 7..11);
@@ -82,20 +212,11 @@ fn arm_data_proc_reg(instr: u32) -> DisasmResult {
     result.set_flags = bit(instr, 20) == 1;
     let rd = Register::try_from(bits(instr, 12..15))?;
     let rn = Register::try_from(bits(instr, 16..19))?;
-    let rm = Register::try_from(bits(instr, 0..3))?;
-    // Operands are placed in order they appear in the manual assembly, e.g. ADC <Rd>, <Rn>, <Rm>
-    for (i, &reg) in [rd, rn, rm].iter().enumerate() {
-        result.operands[i] = Some(Operand::Reg { reg, shift: None });
-    }
+    let imm = bits(instr, 0..12);
+    result.operands[0] = Some(Operand::unshifted(rd));
+    result.operands[1] = Some(Operand::unshifted(rn));
+    result.operands[2] = Some(Operand::Imm(ImmValue::Unsigned(imm)));
     Ok(result)
-}
-
-fn arm_data_proc_shift_reg(instr: u32) -> DisasmResult {
-    todo!()
-}
-
-fn arm_data_proc_imm(instr: u32) -> DisasmResult {
-    todo!()
 }
 
 fn arm_misc(instr: u32) -> DisasmResult {
