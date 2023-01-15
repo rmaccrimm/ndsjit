@@ -1,8 +1,7 @@
 use ndsjit::disasm::armv4t::{Cond, Instruction, Op, Operand, Register, Shift, ShiftType};
 use std::error::Error;
 use std::fmt::Display;
-use std::ops::{Range, RangeBounds};
-use std::slice::SliceIndex;
+use std::ops::Range;
 use std::str::FromStr;
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -51,10 +50,70 @@ fn parse_str_range<T: FromStr>(name: &str, val: &str, i: Range<usize>) -> Result
         .ok_or(ParseError::for_field(name, val))
 }
 
+fn parse_operand_no_shift(input: &str) -> Result<Operand, ParseError> {
+    let parse_err = || ParseError::for_field("operand", input);
+    if let Ok(reg) = Register::from_str(input) {
+        Ok(Operand::Reg { reg, shift: None })
+    } else if input.starts_with("#") {
+        let rest = input.get(1..).ok_or(parse_err())?;
+        let i = parse_dec("operand", rest)?;
+        Ok(Operand::unsigned(i).unwrap())
+    } else {
+        Err(parse_err())
+    }
+}
+
+fn parse_shift(input: &str) -> Result<Shift, ParseError> {
+    let parse_err = ParseError::for_field("shift", input);
+    let kind: ShiftType = parse_str_range("shift", input, 0..3)?;
+    let by = parse_operand_no_shift(input.split_whitespace().nth(1).ok_or(parse_err)?)?;
+    match by {
+        Operand::Imm(imm) => Ok(Shift::ImmShift {
+            shift_type: kind,
+            shift_amt: imm,
+        }),
+        Operand::Reg { reg, shift } => Ok(Shift::RegShift {
+            shift_type: kind,
+            shift_reg: reg,
+        }),
+    }
+}
+
+fn parse_operands(input: &str) -> Result<Vec<Operand>, ParseError> {
+    let mut split = input.split(", ");
+    let parse_err = || ParseError::for_field("operands", input);
+
+    let mut ops: Vec<Operand> = Vec::new();
+    let mut curr = split.next().ok_or(parse_err())?;
+    let mut next = split.next();
+    loop {
+        let mut op = parse_operand_no_shift(curr)?;
+        if let Operand::Reg { reg, shift: _ } = op {
+            if let Some(token) = next {
+                // Search next token for a shift
+                if let Ok(shift) = parse_shift(token) {
+                    op = Operand::Reg {
+                        reg,
+                        shift: Some(shift),
+                    };
+                    next = split.next();
+                }
+            }
+        }
+        ops.push(op);
+        if next.is_none() {
+            break;
+        }
+        curr = next.unwrap();
+        next = split.next();
+    }
+    Ok(ops)
+}
+
 /// Parse a line of output from gnu-as
 fn parse_asm_line(txt: String) -> Result<AsmLine, ParseError> {
-    let split = txt.trim().split_whitespace();
-    let next_split = || split.next().ok_or(ParseError::FormatError);
+    let mut split = txt.trim().split_whitespace();
+    let mut next_split = || split.next().ok_or(ParseError::FormatError);
 
     let ind: usize = parse_dec("index", next_split()?)?;
     let addr = parse_hex("address", next_split()?)?;
@@ -70,30 +129,77 @@ fn parse_asm_line(txt: String) -> Result<AsmLine, ParseError> {
         },
         None => Ok(false),
     }?;
-    // .map(|s| {
-    //     if s.to_uppercase() == "S" {
-    //         Ok(true)
-    //     } else {
-    //         Err(ParseError::for_field("S", mnemonic))
-    //     }
-    // })
-    // .transpose()?
-    // .is_some();
 
-    // let op: Op = mnemonic
-    // .get(0..3)
-    // .map(|s| s.parse().ok())
-    // .flatten()
-    // .ok_or(ParseError::for_field("op", mnemonic))?;
-    // let cond = mnemonic.get(4..6).map_or(Ok(Cond::AL), |s| Cond::from_str(s))?;
-    // let s = mnemonic.get(6).map_or(false, |s| )
+    let rest = split.collect::<Vec<&str>>().join(" ");
+    let operands = parse_operands(&rest)?;
+    if operands.len() > 3 {
+        return Err(ParseError::for_field("operands", &rest));
+    }
+
+    let instr = Instruction {
+        cond,
+        op,
+        operands: [
+            operands.get(0).cloned(),
+            operands.get(1).cloned(),
+            operands.get(2).cloned(),
+        ],
+        set_flags: s,
+    };
+
+    Ok(AsmLine {
+        line_no: ind,
+        addr,
+        encoding,
+        instr,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ndsjit::disasm::armv4t::{ImmValue, Register::*, ShiftType::*};
 
     #[test]
+    fn test_parse_operand_no_shift() {
+        assert_eq!(parse_operand_no_shift("sp").unwrap(), Operand::unshifted(SP).unwrap());
+        assert_eq!(parse_operand_no_shift("#123494").unwrap(), Operand::unsigned(123494).unwrap());
+        assert!(parse_operand_no_shift(" #1234").is_err());
+        assert!(parse_operand_no_shift("LSL #1234").is_err());
+    }
+
+    #[test]
+    fn test_parse_operands() {
+        let res = parse_operands("lr, ROR #123, pc, LSL r1, r2, r3, #99").unwrap();
+        assert_eq!(
+            res[0],
+            Operand::shifted(
+                LR,
+                Shift::ImmShift {
+                    shift_type: ROR,
+                    shift_amt: ImmValue::Unsigned(123)
+                }
+            )
+            .unwrap()
+        );
+        assert_eq!(
+            res[1],
+            Operand::shifted(
+                PC,
+                Shift::RegShift {
+                    shift_type: LSL,
+                    shift_reg: R1
+                }
+            )
+            .unwrap()
+        );
+        assert_eq!(res[2], Operand::unshifted(R2).unwrap());
+        assert_eq!(res[3], Operand::unshifted(R3).unwrap());
+        assert_eq!(res[4], Operand::unsigned(99).unwrap());
+    }
+
+    #[test]
+    #[ignore]
     fn test_parse_asm_line() {
         let line = String::from("   2 0004 A00ED614      ANDGE sp, lr, r4, LSL r6\n");
         assert_eq!(
