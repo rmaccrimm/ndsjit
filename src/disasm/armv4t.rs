@@ -1,7 +1,10 @@
 use super::DisasmError;
 use std::convert::TryFrom;
+use std::fmt;
+use std::fmt::Write;
+use strum::EnumString;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, EnumString)]
 pub enum Cond {
     EQ,
     NE,
@@ -46,7 +49,8 @@ impl TryFrom<u32> for Cond {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, EnumString)]
+#[strum(ascii_case_insensitive)]
 pub enum Register {
     R0,
     R1,
@@ -64,6 +68,7 @@ pub enum Register {
     SP,
     LR,
     PC,
+    #[strum(disabled)]
     FLAGS,
 }
 
@@ -94,7 +99,7 @@ impl TryFrom<u32> for Register {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, EnumString)]
 pub enum ShiftType {
     LSL,
     LSR,
@@ -103,14 +108,14 @@ pub enum ShiftType {
     RRX,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 /// TBD if this is actually useful. Maybe should have Signed(u32) instead (i.e. do the cast later)?
 pub enum ImmValue {
     Signed(i32),
     Unsigned(u32),
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Shift {
     RegShift {
         shift_type: ShiftType,
@@ -122,26 +127,31 @@ pub enum Shift {
     },
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Operand {
     Reg { reg: Register, shift: Option<Shift> },
     Imm(ImmValue),
 }
 
+/// Helper methods for filling out operand lists
 impl Operand {
-    pub fn unshifted(reg: Register) -> Self {
-        Self::Reg { reg, shift: None }
+    pub fn unshifted(reg: Register) -> Option<Self> {
+        Some(Self::Reg { reg, shift: None })
     }
 
-    pub fn shifted(reg: Register, shift: Shift) -> Self {
-        Self::Reg {
+    pub fn shifted(reg: Register, shift: Shift) -> Option<Self> {
+        Some(Self::Reg {
             reg,
             shift: Some(shift),
-        }
+        })
+    }
+
+    pub fn unsigned(imm: u32) -> Option<Self> {
+        Some(Self::Imm(ImmValue::Unsigned(imm)))
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, EnumString)]
 pub enum Op {
     UNDEFINED,
     ADC,
@@ -583,7 +593,7 @@ pub enum Op {
 
 const MAX_NUM_OPERANDS: usize = 3;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Instruction {
     pub cond: Cond,
     pub op: Op,
@@ -599,5 +609,93 @@ impl Default for Instruction {
             operands: [None; 3],
             set_flags: false,
         }
+    }
+}
+
+impl fmt::Display for Instruction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = if self.set_flags { "S" } else { "" };
+        let mut operand_str = String::new();
+        for i in 0..MAX_NUM_OPERANDS {
+            match self.operands[i] {
+                None => {
+                    break;
+                }
+                Some(Operand::Reg { reg, shift }) => {
+                    if i != 0 {
+                        operand_str.push_str(", ");
+                    }
+                    write!(operand_str, "{:?}", reg)?;
+                    match shift {
+                        Some(Shift::ImmShift {
+                            shift_type,
+                            shift_amt,
+                        }) => {
+                            write!(operand_str, ", {:?}", shift_type)?;
+                            match shift_amt {
+                                ImmValue::Unsigned(x) => {
+                                    write!(operand_str, ", #{}", x)?;
+                                }
+                                _ => todo!(),
+                            }
+                        }
+                        Some(Shift::RegShift {
+                            shift_type,
+                            shift_reg,
+                        }) => {
+                            write!(operand_str, ", {:?} {:?}", shift_type, shift_reg)?;
+                        }
+                        _ => {}
+                    }
+                }
+                Some(Operand::Imm(imm)) => match imm {
+                    ImmValue::Unsigned(x) => {
+                        write!(operand_str, ", #{}", x)?;
+                    }
+                    _ => todo!(),
+                },
+            }
+        }
+        write!(
+            f,
+            "{op:?}{cond:?}{s} {operands}",
+            op = self.op,
+            cond = self.cond,
+            s = s,
+            operands = operand_str
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use super::{
+        Cond::*,
+        Instruction,
+        Op::{self, *},
+        Operand,
+        Register::*,
+    };
+
+    #[test]
+    fn test_instr_display() {
+        let instr = Instruction {
+            cond: EQ,
+            op: AND,
+            operands: [
+                Operand::unshifted(R12),
+                Operand::unshifted(PC),
+                Operand::unsigned(12),
+            ],
+            ..Default::default()
+        };
+        assert_eq!(instr.to_string(), "ANDEQ R12, PC, #12");
+    }
+
+    #[test]
+    fn test_enum_str_derive() {
+        assert_eq!(Op::from_str("AND").unwrap(), AND);
     }
 }
