@@ -1,236 +1,91 @@
-use ndsjit::disasm::armv4t::{Cond, Instruction, Op, Operand, Register, Shift, ShiftType};
-use std::error::Error;
-use std::fmt::Display;
-use std::ops::Range;
-use std::str::FromStr;
+mod parsing;
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-struct AsmLine {
-    line_no: usize,
-    addr: u32,
-    encoding: u32,
-    instr: Instruction,
-}
+use std::fmt::Write as FmtWrite;
+use std::io::Write as IOWrite;
+use std::process::{Command, Stdio};
+use std::str::{from_utf8, FromStr};
 
-#[derive(Debug)]
-enum ParseError {
-    FormatError,
-    FieldError { field: String, value: String },
-}
+use ndsjit::disasm::disassemble_arm;
+use rand::{seq::SliceRandom, thread_rng};
 
-impl ParseError {
-    fn for_field(f: &str, v: &str) -> Self {
-        Self::FieldError {
-            field: String::from(f),
-            value: String::from(v),
-        }
-    }
-}
+use parsing::AsmLine;
 
-impl Display for ParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
+// use ndsjit::disasm::disassemble_arm;
+// use parsing::AsmLine;
 
-impl Error for ParseError {}
+const REG_OPTS: [&str; 16] = [
+    "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7", "r8", "r9", "r10", "r11", "r12", "sp", "lr",
+    "pc",
+];
 
-fn parse_dec<T: FromStr>(name: &str, val: &str) -> Result<T, ParseError> {
-    val.parse().map_err(|_| ParseError::for_field(name, val))
-}
+const COND_OPTS: [&str; 15] = [
+    "EQ", "NE", "CS", "CC", "MI", "PL", "VS", "VC", "HI", "LS", "GE", "LT", "GT", "LE", "AL",
+];
 
-fn parse_hex(name: &str, val: &str) -> Result<u32, ParseError> {
-    u32::from_str_radix(val, 16).map_err(|_| ParseError::for_field(name, val))
-}
+const S_OPTS: [&str; 2] = ["", "S"];
 
-fn parse_str_range<T: FromStr>(name: &str, val: &str, i: Range<usize>) -> Result<T, ParseError> {
-    val.get(i)
-        .map(|s| s.parse().ok())
-        .flatten()
-        .ok_or(ParseError::for_field(name, val))
-}
+const SHIFT_OPS: [&str; 4] = ["LSL", "LSR", "ASR", "ROR"];
 
-fn parse_operand_no_shift(input: &str) -> Result<Operand, ParseError> {
-    let parse_err = || ParseError::for_field("operand", input);
-    if let Ok(reg) = Register::from_str(input) {
-        Ok(Operand::Reg { reg, shift: None })
-    } else if input.starts_with("#") {
-        let rest = input.get(1..).ok_or(parse_err())?;
-        let i = parse_dec("operand", rest)?;
-        Ok(Operand::unsigned(i).unwrap())
-    } else {
-        Err(parse_err())
-    }
-}
+#[test]
+fn test_and() {
+    // let file = File::create("tests/asm/and.asm").unwrap();
+    // let mut writer = BufWriter::new(file);
 
-fn parse_shift(input: &str) -> Result<Shift, ParseError> {
-    let parse_err = ParseError::for_field("shift", input);
-    let kind: ShiftType = parse_str_range("shift", input, 0..3)?;
-    let by = parse_operand_no_shift(input.split_whitespace().nth(1).ok_or(parse_err)?)?;
-    match by {
-        Operand::Imm(imm) => Ok(Shift::ImmShift {
-            shift_type: kind,
-            shift_amt: imm,
-        }),
-        Operand::Reg { reg, shift } => Ok(Shift::RegShift {
-            shift_type: kind,
-            shift_reg: reg,
-        }),
-    }
-}
+    let mut input = String::new();
 
-fn parse_operands(input: &str) -> Result<Vec<Operand>, ParseError> {
-    let mut split = input.split(", ");
-    let parse_err = || ParseError::for_field("operands", input);
+    let mut rng = thread_rng();
+    for r1 in REG_OPTS {
+        for r2 in REG_OPTS {
+            for r3 in REG_OPTS {
+                let cond = COND_OPTS.choose(&mut rng).unwrap();
+                let r4 = REG_OPTS.choose(&mut rng).unwrap();
+                let shift = SHIFT_OPS.choose(&mut rng).unwrap();
+                let s = S_OPTS.choose(&mut rng).unwrap();
 
-    let mut ops: Vec<Operand> = Vec::new();
-    let mut curr = split.next().ok_or(parse_err())?;
-    let mut next = split.next();
-    loop {
-        let mut op = parse_operand_no_shift(curr)?;
-        if let Operand::Reg { reg, shift: _ } = op {
-            if let Some(token) = next {
-                // Search next token for a shift
-                if let Ok(shift) = parse_shift(token) {
-                    op = Operand::Reg {
-                        reg,
-                        shift: Some(shift),
-                    };
-                    next = split.next();
-                }
+                writeln!(input, "AND{cond}{s} {r1}, {r2}, {r3}, {shift} {r4}")
+                    .expect("failed to write to input string")
             }
         }
-        ops.push(op);
-        if next.is_none() {
-            break;
-        }
-        curr = next.unwrap();
-        next = split.next();
     }
-    Ok(ops)
-}
+    let mut asm_proc = Command::new("docker")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .args([
+            "run",
+            "-i",
+            "--log-driver=none",
+            "-a",
+            "stdin",
+            "-a",
+            "stdout",
+            "-a",
+            "stderr",
+            "asm",
+        ])
+        .spawn()
+        .expect("Docker command failed to start");
 
-/// Parse a line of output from gnu-as
-fn parse_asm_line(txt: String) -> Result<AsmLine, ParseError> {
-    let mut split = txt.trim().split_whitespace();
-    let mut next_split = || split.next().ok_or(ParseError::FormatError);
+    let mut stdin = asm_proc.stdin.take().expect("failed to get stdin");
+    std::thread::spawn(move || {
+        stdin
+            .write_all(input.as_bytes())
+            .expect("failed to write to stdin")
+    });
 
-    let ind: usize = parse_dec("index", next_split()?)?;
-    let addr = parse_hex("address", next_split()?)?;
-    let encoding = parse_hex("encoding", next_split()?)?;
-    let mnemonic = next_split()?;
-    let op: Op = parse_str_range("op", mnemonic, 0..3)?;
-    let cond: Cond = parse_str_range("cond", mnemonic, 3..5)?;
+    let output = asm_proc
+        .wait_with_output()
+        .expect("failed to wait on process");
 
-    let s = match mnemonic.get(5..6) {
-        Some(s) => match s.to_uppercase() == "S" {
-            true => Ok(true),
-            false => Err(ParseError::for_field("S", mnemonic)),
-        },
-        None => Ok(false),
-    }?;
-
-    let rest = split.collect::<Vec<&str>>().join(" ");
-    let operands = parse_operands(&rest)?;
-    if operands.len() > 3 {
-        return Err(ParseError::for_field("operands", &rest));
-    }
-
-    let instr = Instruction {
-        cond,
-        op,
-        operands: [
-            operands.get(0).cloned(),
-            operands.get(1).cloned(),
-            operands.get(2).cloned(),
-        ],
-        set_flags: s,
-    };
-
-    Ok(AsmLine {
-        line_no: ind,
-        addr,
-        encoding,
-        instr,
-    })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use ndsjit::disasm::armv4t::{ImmValue, Register::*, ShiftType::*};
-
-    #[test]
-    fn test_parse_operand_no_shift() {
-        assert_eq!(parse_operand_no_shift("sp").unwrap(), Operand::unshifted(SP).unwrap());
-        assert_eq!(parse_operand_no_shift("#123494").unwrap(), Operand::unsigned(123494).unwrap());
-        assert!(parse_operand_no_shift(" #1234").is_err());
-        assert!(parse_operand_no_shift("LSL #1234").is_err());
-    }
-
-    #[test]
-    fn test_parse_operands() {
-        let res = parse_operands("lr, ROR #123, pc, LSL r1, r2, r3, #99").unwrap();
-        assert_eq!(
-            res[0],
-            Operand::shifted(
-                LR,
-                Shift::ImmShift {
-                    shift_type: ROR,
-                    shift_amt: ImmValue::Unsigned(123)
-                }
-            )
-            .unwrap()
-        );
-        assert_eq!(
-            res[1],
-            Operand::shifted(
-                PC,
-                Shift::RegShift {
-                    shift_type: LSL,
-                    shift_reg: R1
-                }
-            )
-            .unwrap()
-        );
-        assert_eq!(res[2], Operand::unshifted(R2).unwrap());
-        assert_eq!(res[3], Operand::unshifted(R3).unwrap());
-        assert_eq!(res[4], Operand::unsigned(99).unwrap());
-    }
-
-    #[test]
-    #[ignore]
-    fn test_parse_asm_line() {
-        let line = String::from("   2 0004 A00ED614      ANDGE sp, lr, r4, LSL r6\n");
-        assert_eq!(
-            parse_asm_line(line).unwrap(),
-            AsmLine {
-                line_no: 2,
-                addr: 4,
-                encoding: 0xa00ed614,
-                instr: Instruction {
-                    cond: Cond::GE,
-                    op: Op::AND,
-                    operands: [
-                        Some(Operand::Reg {
-                            reg: Register::SP,
-                            shift: None
-                        }),
-                        Some(Operand::Reg {
-                            reg: Register::LR,
-                            shift: None
-                        }),
-                        Some(Operand::Reg {
-                            reg: Register::R4,
-                            shift: Some(Shift::RegShift {
-                                shift_type: ShiftType::LSL,
-                                shift_reg: Register::R6
-                            })
-                        })
-                    ],
-                    set_flags: false
-                }
+    for (i, line) in from_utf8(output.stdout.as_slice())
+        .unwrap()
+        .lines()
+        .enumerate()
+    {
+        match AsmLine::from_str(line) {
+            Ok(asm_line) => assert_eq!(disassemble_arm(asm_line.encoding).unwrap(), asm_line.instr),
+            Err(err) => {
+                println!("Failed to parse line \"{line}\": {err}")
             }
-        )
+        }
     }
 }
