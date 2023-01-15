@@ -9,8 +9,6 @@ use bits::{bit, bits};
 use std::error::Error;
 use std::fmt::Display;
 
-use self::armv4t::Cond;
-
 #[derive(Debug)]
 pub struct DisasmError {
     description: String,
@@ -38,11 +36,11 @@ impl Error for DisasmError {}
 
 type DisasmResult = Result<Instruction, DisasmError>;
 
-pub fn disassemble_arm(addr: u32, instr: u32) -> DisasmResult {
+pub fn disassemble_arm(instr: u32) -> DisasmResult {
     match bits(instr, 28..31) {
         0b1111 => arm_unconditional(instr),
         _ => match bits(instr, 25..27) {
-            0b000 | 0b001 => arm_data_proc_and_misc(instr), // Containes some load/store as well
+            0b000 | 0b001 => arm_data_proc_and_misc(instr),
             0b010 => arm_load_store(instr),
             0b011 => match bit(instr, 4) {
                 0 => arm_load_store(instr),
@@ -62,4 +60,19 @@ pub fn disassemble_thumb(addr: u32, instr: u16) -> DisasmResult {
     // back out to the binary reader which will return the extra byte? Or we just always send 2 and
     // only decode the first?
     todo!();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::armv4t::{Cond::*, Instruction, Op::*, Operand, Register::*};
+    use super::disassemble_arm;
+
+    #[test]
+    #[rustfmt::skip]
+    fn test_disasm_data_proc() {
+        assert_eq!(
+            disassemble_arm(0x020FC00C).unwrap(), 
+            Instruction { cond: EQ, op: AND, operands: [Operand::unshifted(R12), Operand::unshifted(PC), Operand::unsigned(12)], ..Default::default() }
+        );
+    }
 }
