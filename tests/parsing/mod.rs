@@ -1,4 +1,6 @@
-use ndsjit::disasm::armv4t::{Cond, Instruction, Op, Operand, Register, Shift, ShiftType};
+use ndsjit::disasm::armv4t::{
+    Cond, ImmValue, Instruction, Op, Operand, Register, Shift, ShiftType,
+};
 use std::error::Error;
 use std::fmt::Display;
 use std::ops::Range;
@@ -12,7 +14,7 @@ pub struct AsmLine {
     pub instr: Instruction,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum ParseError {
     FormatError,
     FieldError { field: String, value: String },
@@ -51,6 +53,7 @@ fn parse_str_range<T: FromStr>(name: &str, val: &str, i: Range<usize>) -> Result
 }
 
 fn parse_operand_no_shift(input: &str) -> Result<Operand, ParseError> {
+    let input = input.trim();
     let parse_err = || ParseError::for_field("operand", input);
     if let Ok(reg) = Register::from_str(input) {
         Ok(Operand::Reg { reg, shift: None })
@@ -66,7 +69,17 @@ fn parse_operand_no_shift(input: &str) -> Result<Operand, ParseError> {
 fn parse_shift(input: &str) -> Result<Shift, ParseError> {
     let parse_err = ParseError::for_field("shift", input);
     let kind: ShiftType = parse_str_range("shift", input, 0..3)?;
-    let by = parse_operand_no_shift(input.split_whitespace().nth(1).ok_or(parse_err)?)?;
+    if let ShiftType::RRX = kind {
+        if input.len() > 3 {
+            return Err(parse_err);
+        } else {
+            return Ok(Shift::ImmShift {
+                shift_type: kind,
+                shift_amt: ImmValue::Unsigned(1),
+            });
+        }
+    }
+    let by = parse_operand_no_shift(input.get(3..).ok_or(parse_err)?)?;
     match by {
         Operand::Imm(imm) => Ok(Shift::ImmShift {
             shift_type: kind,
@@ -115,6 +128,11 @@ impl FromStr for AsmLine {
     type Err = ParseError;
 
     fn from_str(input: &str) -> Result<Self, Self::Err> {
+        // Assembler output includes a lot of empty strings, and page headers
+        if input.len() == 0 || input.trim().starts_with("ARM GAS") {
+            return Err(ParseError::FormatError);
+        }
+
         let mut split = input.trim().split_whitespace();
         let mut next_split = || split.next().ok_or(ParseError::FormatError);
 
@@ -165,16 +183,16 @@ mod tests {
     use ndsjit::disasm::armv4t::{ImmValue, Register::*, ShiftType::*};
 
     #[test]
-    fn test_parse_operand_no_shift() {
-        assert_eq!(parse_operand_no_shift("sp").unwrap(), Operand::unshifted(SP).unwrap());
-        assert_eq!(parse_operand_no_shift("#123494").unwrap(), Operand::unsigned(123494).unwrap());
-        assert!(parse_operand_no_shift(" #1234").is_err());
+    fn test_parse_operand_no_shift() -> Result<(), ParseError> {
+        assert_eq!(parse_operand_no_shift("sp")?, Operand::unshifted(SP).unwrap());
+        assert_eq!(parse_operand_no_shift("#123494")?, Operand::unsigned(123494).unwrap());
         assert!(parse_operand_no_shift("LSL #1234").is_err());
+        Ok(())
     }
 
     #[test]
-    fn test_parse_operands() {
-        let res = parse_operands("lr, ROR #123,pc , LSL r1,r2, r3, #99").unwrap();
+    fn test_parse_operands() -> Result<(), ParseError> {
+        let res = parse_operands("lr, ROR #123,pc , LSL r1,r2, r3, #99")?;
         assert_eq!(
             res[0],
             Operand::shifted(
@@ -202,12 +220,13 @@ mod tests {
         assert_eq!(res[4], Operand::unsigned(99).unwrap());
 
         assert!(parse_operands("lqq, ROR #123, pc").is_err());
+        Ok(())
     }
 
     #[test]
-    fn test_asm_line_from_str() {
+    fn test_asm_line_from_str() -> Result<(), ParseError> {
         let line = String::from("   2 0004 A00ED614      ANDGE sp, lr, r4,LSL r6\n");
-        let asm: AsmLine = line.parse().unwrap();
+        let asm: AsmLine = line.parse()?;
         assert_eq!(
             asm,
             AsmLine {
@@ -237,6 +256,39 @@ mod tests {
                     set_flags: false
                 }
             }
-        )
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_empty_line() {
+        assert_eq!(AsmLine::from_str("").unwrap_err(), ParseError::FormatError);
+    }
+
+    #[test]
+    fn test_header_line() {
+        let line = "ARM GAS                          page 1";
+        assert_eq!(AsmLine::from_str(line).unwrap_err(), ParseError::FormatError);
+        let line = "\x0cARM GAS                          page 37";
+        assert_eq!(AsmLine::from_str(line).unwrap_err(), ParseError::FormatError);
+    }
+
+    #[test]
+    fn test_parse_shift() -> Result<(), ParseError> {
+        assert_eq!(
+            parse_shift("LSL#23")?,
+            Shift::ImmShift {
+                shift_type: LSL,
+                shift_amt: ImmValue::Unsigned(23)
+            }
+        );
+        assert_eq!(
+            parse_shift("RRX").unwrap(),
+            Shift::ImmShift {
+                shift_type: RRX,
+                shift_amt: ImmValue::Unsigned(1)
+            }
+        );
+        Ok(())
     }
 }
