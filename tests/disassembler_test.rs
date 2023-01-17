@@ -29,6 +29,7 @@ const SHIFT_OPS: [&str; 6] = ["LSL", "LSR", "ASR", "ROR", "RRX", ""];
 struct AsmGenerator {
     op: String,
     num_regs: usize,
+    suffix: bool,
     shift: bool,
     shift_reg: bool,
     imm_value: bool,
@@ -39,10 +40,16 @@ impl AsmGenerator {
         Self {
             op: op.into(),
             num_regs: 0,
+            suffix: true,
             shift: false,
             shift_reg: false,
             imm_value: false,
         }
+    }
+
+    fn no_suffix(&mut self) -> &mut Self {
+        self.suffix = false;
+        self
     }
 
     fn register(&mut self) -> &mut Self {
@@ -84,7 +91,11 @@ impl AsmGenerator {
             let mut line = String::new();
             let op = &self.op;
             let cond = COND_OPTS.choose(&mut rng).unwrap();
-            let s = S_OPTS.choose(&mut rng).unwrap();
+            let s = if self.suffix {
+                S_OPTS.choose(&mut rng).unwrap()
+            } else {
+                ""
+            };
             let regs = comb.iter().map(|s| *s).join(", ");
             write!(line, "{op}{cond}{s} {regs}").unwrap();
 
@@ -190,8 +201,7 @@ fn disassemble_gas_output(output: &str) {
                 assert_eq!(
                     disassemble_arm(asm_line.encoding).unwrap(),
                     asm_line.instr,
-                    "Disassembling {}",
-                    asm_line.encoding
+                    "Disassembling {line}",
                 )
             }
             Err(err) => {
@@ -202,17 +212,9 @@ fn disassemble_gas_output(output: &str) {
 }
 
 #[rstest]
-#[case("AND")]
-#[case("EOR")]
-#[case("SUB")]
-#[case("RSB")]
-#[case("ADD")]
-#[case("ADC")]
-#[case("SBC")]
-#[case("RSC")]
-#[case("ORR")]
-#[case("BIC")]
-fn test_disasm_data_proc_instr(#[case] op: &str) {
+fn test_disasm_data_proc_instr_reg_shift(
+    #[values("AND", "EOR", "SUB", "RSB", "ADD", "ADC", "SBC", "RSC", "ORR", "BIC")] op: &str,
+) {
     let input = AsmGenerator::new(op)
         .register()
         .register()
@@ -221,7 +223,12 @@ fn test_disasm_data_proc_instr(#[case] op: &str) {
         .generate();
     let out = gas_assemble_input(input);
     disassemble_gas_output(&out);
+}
 
+#[rstest]
+fn test_disasm_data_proc_instr_imm_shift(
+    #[values("AND", "EOR", "SUB", "RSB", "ADD", "ADC", "SBC", "RSC", "ORR", "BIC")] op: &str,
+) {
     let input = AsmGenerator::new(op)
         .register()
         .register()
@@ -230,7 +237,12 @@ fn test_disasm_data_proc_instr(#[case] op: &str) {
         .generate();
     let out = gas_assemble_input(input);
     disassemble_gas_output(&out);
+}
 
+#[rstest]
+fn test_disasm_data_proc_instr_imm(
+    #[values("AND", "EOR", "SUB", "RSB", "ADD", "ADC", "SBC", "RSC", "ORR", "BIC")] op: &str,
+) {
     let input = AsmGenerator::new(op)
         .register()
         .register()
@@ -241,11 +253,16 @@ fn test_disasm_data_proc_instr(#[case] op: &str) {
 }
 
 #[rstest]
-#[case("TST")]
-#[case("TEQ")]
-#[case("CMP")]
-#[case("CMN")]
-fn test_disasm_compare_instr(#[case] _op: &str) {}
+fn test_disasm_comparison_instr_reg_shift(#[values("TST", "TEQ", "CMP", "CMN")] op: &str) {
+    let input = AsmGenerator::new(op)
+        .no_suffix()
+        .register()
+        .register()
+        .reg_shift()
+        .generate();
+    let out = gas_assemble_input(input);
+    disassemble_gas_output(&out);
+}
 
 #[rstest]
 #[case("LSL")]
@@ -254,15 +271,3 @@ fn test_disasm_compare_instr(#[case] _op: &str) {}
 #[case("ROR")]
 #[case("RRX")]
 fn test_disasm_shift_instr(#[case] _op: &str) {}
-
-#[test]
-fn try_itertools() {
-    let output = AsmGenerator::new("AND")
-        .register()
-        .register()
-        .imm_shift()
-        .generate();
-    for line in output.lines() {
-        dbg!(line);
-    }
-}
