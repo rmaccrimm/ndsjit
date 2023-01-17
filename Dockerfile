@@ -17,5 +17,5 @@ RUN mkdir /app/out
 
 # CMD exec arm-none-linux-gnueabihf-as -o /dev/nul -al --no-warn > /app/out/out.txt and.asm
 
-CMD ["arm-none-linux-gnueabihf-as", "-o", "/dev/nul", "-al", "--no-warn"]
+CMD ["arm-none-linux-gnueabihf-as", "-o", "/dev/nul", "-al", "--no-warn", "-mbig-endian"]
 
