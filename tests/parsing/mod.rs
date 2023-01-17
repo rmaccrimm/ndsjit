@@ -6,7 +6,7 @@ use std::fmt::Display;
 use std::ops::Range;
 use std::str::FromStr;
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug)]
 pub struct AsmLine {
     pub line_no: usize,
     pub addr: u32,
@@ -157,7 +157,7 @@ impl FromStr for AsmLine {
             return Err(ParseError::for_field("operands", &rest));
         }
 
-        let instr = Instruction {
+        let mut instr = Instruction {
             cond,
             op,
             operands: [
@@ -167,6 +167,11 @@ impl FromStr for AsmLine {
             ],
             set_flags: s,
         };
+
+        // These instructions always set flags and do not support the S suffix
+        if [Op::TEQ, Op::TST, Op::CMN, Op::CMP].contains(&instr.op) {
+            instr.set_flags = true;
+        }
 
         Ok(AsmLine {
             line_no: ind,
