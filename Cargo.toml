@@ -9,3 +9,5 @@ cranelift-jit = "0.90.1"
 cranelift-module = "0.90.1"
 strum = { version = "0.24", features = ["derive"] }
 rand = "0.8.5"
+rstest = "0.16.0"
+itertools = "0.10.5"
