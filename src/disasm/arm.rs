@@ -116,8 +116,8 @@ fn decode_data_proc_op(
 }
 
 /// Implements DecodeImmShift pseudo-code function. Argument shift_type must be a 2-bit value
-fn decode_imm_shift(shift_type: u32, imm5: u32) -> Shift {
-    match shift_type {
+fn decode_imm_shift(shift_type: u32, imm5: u32) -> Option<Shift> {
+    let shift = match shift_type {
         0b00 => Shift::ImmShift {
             shift_type: ShiftType::LSL,
             shift_amt: ImmValue::Unsigned(imm5),
@@ -150,7 +150,15 @@ fn decode_imm_shift(shift_type: u32, imm5: u32) -> Shift {
             }
         }
         _ => unreachable!(),
+    };
+    if let Shift::ImmShift {
+        shift_type: _,
+        shift_amt: ImmValue::Unsigned(0),
+    } = shift
+    {
+        return None;
     }
+    Some(shift)
 }
 
 /// Decode data-processing instructions with a register operand  that can optionally be shifted by a
@@ -163,7 +171,7 @@ fn arm_data_proc_reg(instr: u32) -> DisasmResult {
 
     let mut result = Instruction::default();
     result.op = op;
-    result.cond = Cond::try_from(instr)?;
+    result.cond = Cond::try_from(bits(instr, 28..31))?;
     result.set_flags = bit(instr, 20) == 1;
 
     let rd = Register::try_from(bits(instr, 12..15))?;
@@ -181,7 +189,7 @@ fn arm_data_proc_reg(instr: u32) -> DisasmResult {
         }
         Op::MVN => {
             result.operands[0] = Operand::unshifted(rd);
-            result.operands[1] = Operand::shifted(rm, shift);
+            result.operands[1] = Some(Operand::Reg { reg: rm, shift });
         }
         Op::MOV | Op::RRX => {
             result.operands[1] = Operand::unshifted(rm);
@@ -197,7 +205,7 @@ fn arm_data_proc_reg(instr: u32) -> DisasmResult {
         _ => {
             result.operands[0] = Operand::unshifted(rd);
             result.operands[1] = Operand::unshifted(rn);
-            result.operands[2] = Operand::shifted(rm, shift);
+            result.operands[2] = Some(Operand::Reg { reg: rm, shift });
         }
     }
     Ok(result)
@@ -211,7 +219,7 @@ fn arm_data_proc_shift_reg(instr: u32) -> DisasmResult {
 
     let mut result = Instruction::default();
     result.op = op;
-    result.cond = Cond::try_from(instr)?;
+    result.cond = Cond::try_from(bits(instr, 28..31))?;
     result.set_flags = bit(instr, 20) == 1;
 
     let rd = Register::try_from(bits(instr, 12..15))?;
