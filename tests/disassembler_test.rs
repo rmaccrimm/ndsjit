@@ -1,3 +1,4 @@
+#[allow(unused_variables)]
 mod parsing;
 
 use std::fmt::Write as FmtWrite;
@@ -5,6 +6,7 @@ use std::io::Write as IOWrite;
 use std::process::{Command, Stdio};
 use std::str::FromStr;
 
+use itertools::Itertools;
 use ndsjit::disasm::disassemble_arm;
 use rand::{seq::SliceRandom, thread_rng, Rng};
 use rstest::rstest;
@@ -24,74 +26,115 @@ const S_OPTS: [&str; 2] = ["", "S"];
 
 const SHIFT_OPS: [&str; 6] = ["LSL", "LSR", "ASR", "ROR", "RRX", ""];
 
-/// Generate assembly for a 3-operand data-processing instruction, with a register-shifted 3rd
-/// operand. Covers all combinations of registers for 3 register arguments, with condition,
-/// shift-register, and "S" flag chosen randomly
-fn gen_data_proc_shift_reg(mnemonic: &str) -> String {
-    let mut input = String::new();
-    let mut rng = thread_rng();
-    for r1 in REG_OPTS {
-        for r2 in REG_OPTS {
-            for r3 in REG_OPTS {
-                let cond = COND_OPTS.choose(&mut rng).unwrap();
-                let r4 = REG_OPTS.choose(&mut rng).unwrap();
-                let shift = SHIFT_OPS[..4].choose(&mut rng).unwrap();
-                let s = S_OPTS.choose(&mut rng).unwrap();
+struct AsmGenerator {
+    op: String,
+    num_regs: usize,
+    shift: bool,
+    shift_reg: bool,
+    imm_value: bool,
+}
 
-                writeln!(input, "{mnemonic}{cond}{s} {r1}, {r2}, {r3}, {shift} {r4}")
-                    .expect("failed to write to input string")
-            }
+impl AsmGenerator {
+    fn new(op: &str) -> Self {
+        Self {
+            op: op.into(),
+            num_regs: 0,
+            shift: false,
+            shift_reg: false,
+            imm_value: false,
         }
     }
-    return input;
-}
 
-/// There are a limited number of 32-bit immediate values available due to the split 8-bit base and
-/// 4-bit rotation encoding that ARM uses
-fn gen_random_imm_value() -> u32 {
-    let base = thread_rng().gen_range(0..256);
-    let rotate = thread_rng().gen_range(0..12) * 2;
-    base << rotate
-}
-
-fn gen_random_shift() -> String {
-    let mut rng = thread_rng();
-    let shift = *SHIFT_OPS.choose(&mut rng).unwrap();
-    let mut res = String::new();
-    let imm = match shift {
-        "LSL" | "ROR" => rng.gen_range(1..32),
-        "LSR" | "ASR" => rng.gen_range(1..33),
-        "RRX" => {
-            write!(res, ", {}", shift).unwrap();
-            return res;
-        }
-        _ => {
-            return res;
-        }
-    };
-    write!(res, ", {} #{}", shift, imm).unwrap();
-    res
-}
-
-/// Generate assembly for a 3-operand data-processing instruction, with an immediate value-shifted
-/// 3rd operand. Covers all combinations of registers for 3 register arguments, with condition,
-/// immediate value, and "S" flag chosen randomly
-fn gen_data_proc_shift_imm(mnemonic: &str) -> String {
-    let mut input = String::new();
-    let mut rng = thread_rng();
-    for r1 in REG_OPTS {
-        for r2 in REG_OPTS {
-            for r3 in REG_OPTS {
-                let cond = COND_OPTS.choose(&mut rng).unwrap();
-                let s = S_OPTS.choose(&mut rng).unwrap();
-                let shift = gen_random_shift();
-
-                writeln!(input, "{mnemonic}{cond}{s} {r1}, {r2}, {r3}{shift}")
-                    .expect("failed to write to input string")
-            }
-        }
+    fn register(&mut self) -> &mut Self {
+        self.num_regs += 1;
+        self
     }
-    return input;
+
+    fn immediate_value(&mut self) -> &mut Self {
+        self.imm_value = true;
+        self
+    }
+
+    fn reg_shift(&mut self) -> &mut Self {
+        self.shift = true;
+        self.shift_reg = true;
+        self
+    }
+
+    fn imm_shift(&mut self) -> &mut Self {
+        self.shift = true;
+        self
+    }
+
+    fn generate(&self) -> String {
+        let mut rng = thread_rng();
+        let mut input = String::new();
+
+        if self.num_regs > 3 {
+            panic!("Too many register combinations!");
+        }
+        if self.shift && self.imm_value {
+            panic!("Cannot have immediate value if shifting");
+        }
+
+        for comb in (0..self.num_regs)
+            .map(|_| &REG_OPTS)
+            .multi_cartesian_product()
+        {
+            let mut line = String::new();
+            let op = &self.op;
+            let cond = COND_OPTS.choose(&mut rng).unwrap();
+            let s = S_OPTS.choose(&mut rng).unwrap();
+            let regs = comb.iter().map(|s| *s).join(", ");
+            write!(line, "{op}{cond}{s} {regs}").unwrap();
+
+            if self.shift {
+                if self.shift_reg {
+                    let shift = SHIFT_OPS[..4].choose(&mut rng).unwrap();
+                    let r = REG_OPTS.choose(&mut rng).unwrap();
+                    write!(line, ", {shift} {r}").unwrap();
+                } else {
+                    let shift = Self::gen_random_shift();
+                    if shift != "" {
+                        write!(line, ", {shift}").unwrap();
+                    }
+                }
+            } else if self.imm_value {
+                let imm = Self::gen_random_imm_value();
+                write!(line, ", #{imm}").unwrap();
+            }
+
+            writeln!(input, "{line}").unwrap();
+        }
+        input
+    }
+
+    /// There are a limited number of 32-bit immediate values available due to the split 8-bit base and
+    /// 4-bit rotation encoding that ARM uses
+    fn gen_random_imm_value() -> u32 {
+        let base = thread_rng().gen_range(0..256);
+        let rotate = thread_rng().gen_range(0..12) * 2;
+        base << rotate
+    }
+
+    fn gen_random_shift() -> String {
+        let mut rng = thread_rng();
+        let shift = *SHIFT_OPS.choose(&mut rng).unwrap();
+        let mut res = String::new();
+        let imm = match shift {
+            "LSL" | "ROR" => rng.gen_range(1..32),
+            "LSR" | "ASR" => rng.gen_range(1..33),
+            "RRX" => {
+                write!(res, "{}", shift).unwrap();
+                return res;
+            }
+            _ => {
+                return res;
+            }
+        };
+        write!(res, "{} #{}", shift, imm).unwrap();
+        res
+    }
 }
 
 /// Spawns a new process running gas in a docker container, passing input as stdin and returning the
@@ -167,16 +210,32 @@ fn disassemble_gas_output(output: &str) {
 #[case("ADC")]
 #[case("SBC")]
 #[case("RSC")]
-#[case("CMP")]
-#[case("CMN")]
 #[case("ORR")]
 #[case("BIC")]
 fn test_disasm_data_proc_instr(#[case] op: &str) {
-    let input = gen_data_proc_shift_reg(op);
+    let input = AsmGenerator::new(op)
+        .register()
+        .register()
+        .register()
+        .reg_shift()
+        .generate();
     let out = gas_assemble_input(input);
     disassemble_gas_output(&out);
 
-    let input = gen_data_proc_shift_imm(op);
+    let input = AsmGenerator::new(op)
+        .register()
+        .register()
+        .register()
+        .imm_shift()
+        .generate();
+    let out = gas_assemble_input(input);
+    disassemble_gas_output(&out);
+
+    let input = AsmGenerator::new(op)
+        .register()
+        .register()
+        .immediate_value()
+        .generate();
     let out = gas_assemble_input(input);
     disassemble_gas_output(&out);
 }
@@ -184,7 +243,9 @@ fn test_disasm_data_proc_instr(#[case] op: &str) {
 #[rstest]
 #[case("TST")]
 #[case("TEQ")]
-fn test_disasm_test_instr(#[case] op: &str) {}
+#[case("CMP")]
+#[case("CMN")]
+fn test_disasm_compare_instr(#[case] _op: &str) {}
 
 #[rstest]
 #[case("LSL")]
@@ -192,4 +253,16 @@ fn test_disasm_test_instr(#[case] op: &str) {}
 #[case("ASR")]
 #[case("ROR")]
 #[case("RRX")]
-fn test_disasm_shift_instr(#[case] op: &str) {}
+fn test_disasm_shift_instr(#[case] _op: &str) {}
+
+#[test]
+fn try_itertools() {
+    let output = AsmGenerator::new("AND")
+        .register()
+        .register()
+        .imm_shift()
+        .generate();
+    for line in output.lines() {
+        dbg!(line);
+    }
+}
