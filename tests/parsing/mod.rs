@@ -85,7 +85,7 @@ fn parse_shift(input: &str) -> Result<Shift, ParseError> {
             shift_type: kind,
             shift_amt: imm,
         }),
-        Operand::Reg { reg, shift } => Ok(Shift::RegShift {
+        Operand::Reg { reg, shift: _ } => Ok(Shift::RegShift {
             shift_type: kind,
             shift_reg: reg,
         }),
