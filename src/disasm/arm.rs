@@ -75,15 +75,17 @@ fn decode_data_proc_op(
     let op = match op1 {
         0b00000 | 0b00001 => Op::AND,
         0b00010 | 0b00011 => Op::EOR,
-        0b00100 | 0b00101 => match rn {
-            Some(0b1111) => Op::ADR,
-            _ => Op::SUB,
-        },
+        0b00100 | 0b00101 => Op::SUB,
+        // 0b00100 | 0b00101 => match rn {
+        // Some(0b1111) => Op::ADR,
+        // _ => Op::SUB,
+        // },
         0b00110 | 0b00111 => Op::RSB,
-        0b01000 | 0b01001 => match rn {
-            Some(0b1111) => Op::ADR,
-            _ => Op::ADD,
-        },
+        0b01000 | 0b01001 => Op::ADD,
+        // 0b01000 | 0b01001 => match rn {
+        //     Some(0b1111) => Op::ADR,
+        //     _ => Op::ADD,
+        // },
         0b01010 | 0b01011 => Op::ADC,
         0b01100 | 0b01101 => Op::SBC,
         0b01110 | 0b01111 => Op::RSC,
@@ -192,8 +194,8 @@ fn arm_data_proc_reg(instr: u32) -> DisasmResult {
             result.operands[1] = Some(Operand::Reg { reg: rm, shift });
         }
         Op::MOV | Op::RRX => {
-            result.operands[1] = Operand::unshifted(rm);
             result.operands[0] = Operand::unshifted(rd);
+            result.operands[1] = Operand::unshifted(rm);
         }
         Op::LSL | Op::LSR | Op::ASR | Op::ROR => {
             // These instructions are actually the immediate versions, even though their encodings
@@ -201,6 +203,10 @@ fn arm_data_proc_reg(instr: u32) -> DisasmResult {
             result.operands[0] = Operand::unshifted(rd);
             result.operands[1] = Operand::unshifted(rn);
             result.operands[2] = Operand::unsigned(imm5);
+        }
+        Op::TEQ | Op::TST | Op::CMN | Op::CMP => {
+            result.operands[0] = Operand::unshifted(rn);
+            result.operands[1] = Some(Operand::Reg { reg: rm, shift });
         }
         _ => {
             result.operands[0] = Operand::unshifted(rd);
@@ -255,6 +261,10 @@ fn arm_data_proc_shift_reg(instr: u32) -> DisasmResult {
             result.operands[1] = Operand::unshifted(rn);
             result.operands[2] = Operand::unshifted(rm);
         }
+        Op::TEQ | Op::TST | Op::CMN | Op::CMP => {
+            result.operands[0] = Operand::unshifted(rn);
+            result.operands[1] = Operand::shifted(rm, shift);
+        }
         _ => {
             result.operands[0] = Operand::unshifted(rd);
             result.operands[1] = Operand::unshifted(rn);
@@ -299,6 +309,10 @@ fn arm_data_proc_imm(instr: u32) -> DisasmResult {
             // TODO - ADR is a PC-relative instruction. Need to figure out it the address should be
             // passed in here or if it should it should just be resolved at runtime
             result.operands[0] = Operand::unshifted(rd);
+            result.operands[1] = Operand::unsigned(imm);
+        }
+        Op::TEQ | Op::TST | Op::CMN | Op::CMP => {
+            result.operands[0] = Operand::unshifted(rn);
             result.operands[1] = Operand::unsigned(imm);
         }
         _ => {
