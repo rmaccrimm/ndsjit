@@ -201,7 +201,7 @@ fn arm_data_proc_reg(instr: u32) -> DisasmResult {
             // These instructions are actually the immediate versions, even though their encodings
             // place them in the "data-processing (register)" category
             result.operands[0] = Operand::unshifted(rd);
-            result.operands[1] = Operand::unshifted(rn);
+            result.operands[1] = Operand::unshifted(rm);
             result.operands[2] = Operand::unsigned(imm5);
         }
         Op::TEQ | Op::TST | Op::CMN | Op::CMP => {
@@ -258,8 +258,8 @@ fn arm_data_proc_shift_reg(instr: u32) -> DisasmResult {
             // These instructions are actually the register versions, even though their encodings
             // place them in the "data-processing (register-shifted register)" category.
             result.operands[0] = Operand::unshifted(rd);
-            result.operands[1] = Operand::unshifted(rn);
-            result.operands[2] = Operand::unshifted(rm);
+            result.operands[1] = Operand::unshifted(rm);
+            result.operands[2] = Operand::unshifted(rs);
         }
         Op::TEQ | Op::TST | Op::CMN | Op::CMP => {
             result.operands[0] = Operand::unshifted(rn);
