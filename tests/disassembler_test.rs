@@ -253,7 +253,7 @@ fn test_disasm_data_proc_instr_imm(
 }
 
 #[rstest]
-fn test_disasm_comparison_instr_reg_shift(#[values("TST", "TEQ", "CMP", "CMN")] op: &str) {
+fn test_disasm_comparison_instr_reg_shift(#[values("TST", "TEQ", "CMP", "CMN", "MVN")] op: &str) {
     let input = AsmGenerator::new(op)
         .no_suffix()
         .register()
@@ -265,9 +265,28 @@ fn test_disasm_comparison_instr_reg_shift(#[values("TST", "TEQ", "CMP", "CMN")] 
 }
 
 #[rstest]
-#[case("LSL")]
-#[case("LSR")]
-#[case("ASR")]
-#[case("ROR")]
-#[case("RRX")]
-fn test_disasm_shift_instr(#[case] _op: &str) {}
+fn test_disasm_comparison_instr_imm_shift(#[values("TST", "TEQ", "CMP", "CMN", "MVN")] op: &str) {
+    let input = AsmGenerator::new(op)
+        .no_suffix()
+        .register()
+        .register()
+        .imm_shift()
+        .generate();
+    let out = gas_assemble_input(input);
+    disassemble_gas_output(&out);
+}
+
+#[rstest]
+fn test_disasm_comparison_instr_imm(#[values("TST", "TEQ", "CMP", "CMN", "MVN")] op: &str) {
+    let input = AsmGenerator::new(op)
+        .no_suffix()
+        .register()
+        .immediate_value()
+        .generate();
+    let out = gas_assemble_input(input);
+    disassemble_gas_output(&out);
+}
+
+#[rstest]
+
+fn test_disasm_shift_instr(#[values("LSL", "LSR", "ASR", "ROR", "RRX")] op: &str) {}
