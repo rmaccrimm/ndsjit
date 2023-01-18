@@ -1,4 +1,4 @@
-#[allow(unused_variables)]
+#[allow(unused_variables, non_snake_case)]
 mod parsing;
 
 use std::fmt::Write as FmtWrite;
@@ -32,7 +32,8 @@ struct AsmGenerator {
     suffix: bool,
     shift: bool,
     shift_reg: bool,
-    imm_value: bool,
+    modified_imm_value: bool,
+    imm_value: Option<(u32, u32)>,
 }
 
 impl AsmGenerator {
@@ -43,7 +44,8 @@ impl AsmGenerator {
             suffix: true,
             shift: false,
             shift_reg: false,
-            imm_value: false,
+            modified_imm_value: false,
+            imm_value: None,
         }
     }
 
@@ -57,8 +59,13 @@ impl AsmGenerator {
         self
     }
 
-    fn immediate_value(&mut self) -> &mut Self {
-        self.imm_value = true;
+    fn modified_immediate_value(&mut self) -> &mut Self {
+        self.modified_imm_value = true;
+        self
+    }
+
+    fn immediate_value(&mut self, min: u32, max: u32) -> &mut Self {
+        self.imm_value = Some((min, max));
         self
     }
 
@@ -79,9 +86,6 @@ impl AsmGenerator {
 
         if self.num_regs > 3 {
             panic!("Too many register combinations!");
-        }
-        if self.shift && self.imm_value {
-            panic!("Cannot have immediate value if shifting");
         }
 
         for comb in (0..self.num_regs)
@@ -110,8 +114,12 @@ impl AsmGenerator {
                         write!(line, ", {shift}").unwrap();
                     }
                 }
-            } else if self.imm_value {
-                let imm = Self::gen_random_imm_value();
+            } else if self.modified_imm_value {
+                let imm = Self::gen_modified_imm_value();
+                write!(line, ", #{imm}").unwrap();
+            } else if self.imm_value.is_some() {
+                let bounds = self.imm_value.unwrap();
+                let imm: u32 = rng.gen_range(bounds.0..bounds.1);
                 write!(line, ", #{imm}").unwrap();
             }
 
@@ -120,9 +128,9 @@ impl AsmGenerator {
         input
     }
 
-    /// There are a limited number of 32-bit immediate values available due to the split 8-bit base and
-    /// 4-bit rotation encoding that ARM uses
-    fn gen_random_imm_value() -> u32 {
+    /// 12-bit ARM constants use a split 8-bit base and 4-bit rotation encoding to provide a larger
+    /// range of values
+    fn gen_modified_imm_value() -> u32 {
         let base = thread_rng().gen_range(0..256);
         let rotate = thread_rng().gen_range(0..12) * 2;
         base << rotate
@@ -157,6 +165,7 @@ fn gas_assemble_input(input: String) -> String {
         .stderr(Stdio::piped())
         .args([
             "run",
+            "--rm",
             "-i",
             "--log-driver=none",
             "-a",
@@ -194,7 +203,8 @@ fn gas_assemble_input(input: String) -> String {
 
 /// Parses the gas listing, passing the encoding to the disassembler and compares the output against
 /// the instruction parsed from the assembly
-fn disassemble_gas_output(output: &str) {
+fn disassembler_test_case(input: &str) {
+    let output = gas_assemble_input(input.to_string());
     for line in output.lines() {
         match AsmLine::from_str(line) {
             Ok(asm_line) => {
@@ -215,78 +225,108 @@ fn disassemble_gas_output(output: &str) {
 fn test_disasm_data_proc_instr_reg_shift(
     #[values("AND", "EOR", "SUB", "RSB", "ADD", "ADC", "SBC", "RSC", "ORR", "BIC")] op: &str,
 ) {
-    let input = AsmGenerator::new(op)
-        .register()
-        .register()
-        .register()
-        .reg_shift()
-        .generate();
-    let out = gas_assemble_input(input);
-    disassemble_gas_output(&out);
+    disassembler_test_case(
+        &AsmGenerator::new(op)
+            .register()
+            .register()
+            .register()
+            .reg_shift()
+            .generate(),
+    );
 }
 
 #[rstest]
 fn test_disasm_data_proc_instr_imm_shift(
     #[values("AND", "EOR", "SUB", "RSB", "ADD", "ADC", "SBC", "RSC", "ORR", "BIC")] op: &str,
 ) {
-    let input = AsmGenerator::new(op)
-        .register()
-        .register()
-        .register()
-        .imm_shift()
-        .generate();
-    let out = gas_assemble_input(input);
-    disassemble_gas_output(&out);
+    disassembler_test_case(
+        &AsmGenerator::new(op)
+            .register()
+            .register()
+            .register()
+            .imm_shift()
+            .generate(),
+    );
 }
 
 #[rstest]
 fn test_disasm_data_proc_instr_imm(
     #[values("AND", "EOR", "SUB", "RSB", "ADD", "ADC", "SBC", "RSC", "ORR", "BIC")] op: &str,
 ) {
-    let input = AsmGenerator::new(op)
-        .register()
-        .register()
-        .immediate_value()
-        .generate();
-    let out = gas_assemble_input(input);
-    disassemble_gas_output(&out);
+    disassembler_test_case(
+        &AsmGenerator::new(op)
+            .register()
+            .register()
+            .modified_immediate_value()
+            .generate(),
+    );
 }
 
 #[rstest]
 fn test_disasm_comparison_instr_reg_shift(#[values("TST", "TEQ", "CMP", "CMN", "MVN")] op: &str) {
-    let input = AsmGenerator::new(op)
-        .no_suffix()
-        .register()
-        .register()
-        .reg_shift()
-        .generate();
-    let out = gas_assemble_input(input);
-    disassemble_gas_output(&out);
+    disassembler_test_case(
+        &AsmGenerator::new(op)
+            .no_suffix()
+            .register()
+            .register()
+            .reg_shift()
+            .generate(),
+    );
 }
 
 #[rstest]
 fn test_disasm_comparison_instr_imm_shift(#[values("TST", "TEQ", "CMP", "CMN", "MVN")] op: &str) {
-    let input = AsmGenerator::new(op)
-        .no_suffix()
-        .register()
-        .register()
-        .imm_shift()
-        .generate();
-    let out = gas_assemble_input(input);
-    disassemble_gas_output(&out);
+    disassembler_test_case(
+        &AsmGenerator::new(op)
+            .no_suffix()
+            .register()
+            .register()
+            .imm_shift()
+            .generate(),
+    );
 }
 
 #[rstest]
 fn test_disasm_comparison_instr_imm(#[values("TST", "TEQ", "CMP", "CMN", "MVN")] op: &str) {
-    let input = AsmGenerator::new(op)
-        .no_suffix()
-        .register()
-        .immediate_value()
-        .generate();
-    let out = gas_assemble_input(input);
-    disassemble_gas_output(&out);
+    disassembler_test_case(
+        &AsmGenerator::new(op)
+            .no_suffix()
+            .register()
+            .modified_immediate_value()
+            .generate(),
+    );
 }
 
 #[rstest]
+fn test_disasm_shift_instr_imm(#[values("LSL", "LSR", "ASR", "ROR")] op: &str) {
+    disassembler_test_case(
+        &AsmGenerator::new(op)
+            .register()
+            .register()
+            // If imm value is 0, get MOV instead
+            .immediate_value(1, 32)
+            .generate(),
+    );
+}
 
-fn test_disasm_shift_instr(#[values("LSL", "LSR", "ASR", "ROR", "RRX")] op: &str) {}
+#[rstest]
+fn test_disasm_shift_instr_reg(#[values("LSL", "LSR", "ASR", "ROR")] op: &str) {
+    disassembler_test_case(
+        &AsmGenerator::new(op)
+            .register()
+            .register()
+            .register()
+            .generate(),
+    );
+}
+
+#[rstest]
+fn test_disasm_instr_MOV() {
+    disassembler_test_case(&AsmGenerator::new("MOV").register().register().generate());
+    disassembler_test_case(
+        &AsmGenerator::new("MOV")
+            .register()
+            .modified_immediate_value()
+            .generate(),
+    );
+}
