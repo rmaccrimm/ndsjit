@@ -159,7 +159,7 @@ pub enum Op {
     ADD,
     ADDS,
     ADDW,
-    ADR,
+    ADR, // Encoded as ADD/SUB PC
     AND,
     ANDS,
     ASR,
