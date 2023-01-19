@@ -591,7 +591,7 @@ pub enum Op {
     YIELD,
 }
 
-const MAX_NUM_OPERANDS: usize = 3;
+const MAX_NUM_OPERANDS: usize = 4;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Instruction {
@@ -606,7 +606,7 @@ impl Default for Instruction {
         Self {
             cond: Cond::AL,
             op: Op::NOP,
-            operands: [None; 3],
+            operands: [None; 4],
             set_flags: false,
         }
     }
@@ -688,6 +688,7 @@ mod tests {
                 Operand::unshifted(R12),
                 Operand::unshifted(PC),
                 Operand::unsigned(12),
+                None,
             ],
             ..Default::default()
         };

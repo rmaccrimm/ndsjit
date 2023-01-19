@@ -21,8 +21,8 @@ impl DisasmError {
         Self { description, instr }
     }
 
-    fn unknown(instr: u32) -> Self {
-        Self::new("unkown instruction", instr)
+    fn undefined(instr: u32) -> Self {
+        Self::new("undefined instruction", instr)
     }
 }
 
@@ -68,11 +68,20 @@ mod tests {
     use super::disassemble_arm;
 
     #[test]
-    #[rustfmt::skip]
     fn test_disasm_data_proc() {
         assert_eq!(
-            disassemble_arm(0x020FC00C).unwrap(), 
-            Instruction { cond: EQ, op: AND, operands: [Operand::unshifted(R12), Operand::unshifted(PC), Operand::unsigned(12)], ..Default::default() }
+            disassemble_arm(0x020FC00C).unwrap(),
+            Instruction {
+                cond: EQ,
+                op: AND,
+                operands: [
+                    Operand::unshifted(R12),
+                    Operand::unshifted(PC),
+                    Operand::unsigned(12),
+                    None
+                ],
+                ..Default::default()
+            }
         );
     }
 }

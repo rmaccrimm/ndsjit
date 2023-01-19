@@ -140,6 +140,7 @@ impl FromStr for AsmLine {
         let addr = parse_hex("address", next_split()?)?;
         let encoding = parse_hex("encoding", next_split()?)?;
         let mnemonic = next_split()?;
+        // problem - Not all ops are 3 letters
         let op: Op = parse_str_range("op", mnemonic, 0..3)?;
         let cond: Cond = parse_str_range("cond", mnemonic, 3..5)?;
 
@@ -164,6 +165,7 @@ impl FromStr for AsmLine {
                 operands.get(0).cloned(),
                 operands.get(1).cloned(),
                 operands.get(2).cloned(),
+                None,
             ],
             set_flags: s,
         };
@@ -256,7 +258,8 @@ mod tests {
                                 shift_type: ShiftType::LSL,
                                 shift_reg: Register::R6
                             })
-                        })
+                        }),
+                        None,
                     ],
                     set_flags: false
                 }
