@@ -1,4 +1,4 @@
-#[allow(unused_variables, non_snake_case)]
+#![allow(unused_variables, non_snake_case)]
 mod parsing;
 
 use std::fmt::Write as FmtWrite;
@@ -329,4 +329,10 @@ fn test_disasm_instr_MOV() {
             .modified_immediate_value()
             .generate(),
     );
+}
+
+#[rstest]
+fn test_disasm_instr_RRX() {
+    // Assembler complains about RRX<cond> without S flag. Probably overlaps with ROR or something?
+    // disassembler_test_case(&AsmGenerator::new("RRX").register().register().generate());
 }
