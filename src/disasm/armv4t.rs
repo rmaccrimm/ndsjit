@@ -99,6 +99,13 @@ impl TryFrom<u32> for Register {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+/// TBD if this is actually useful. Maybe should have Signed(u32) instead (i.e. do the cast later)?
+pub enum ImmValue {
+    Signed(i32),
+    Unsigned(u32),
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, EnumString)]
 pub enum ShiftType {
     LSL,
@@ -106,13 +113,6 @@ pub enum ShiftType {
     ASR,
     ROR,
     RRX,
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-/// TBD if this is actually useful. Maybe should have Signed(u32) instead (i.e. do the cast later)?
-pub enum ImmValue {
-    Signed(i32),
-    Unsigned(u32),
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -128,22 +128,44 @@ pub enum Shift {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum AddrMode {
+    Offset,
+    PreIndex,
+    PostIndex,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct Address {
+    pub base: Register,
+    pub shift: Option<Shift>,
+    pub mode: AddrMode,
+    pub write_back: bool,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct ShiftedRegister {
+    pub reg: Register,
+    pub shift: Option<Shift>,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Operand {
-    Reg { reg: Register, shift: Option<Shift> },
+    Reg(ShiftedRegister),
     Imm(ImmValue),
+    Addr(Address),
 }
 
 /// Helper methods for filling out operand lists
 impl Operand {
     pub fn unshifted(reg: Register) -> Option<Self> {
-        Some(Self::Reg { reg, shift: None })
+        Some(Self::Reg(ShiftedRegister { reg, shift: None }))
     }
 
     pub fn shifted(reg: Register, shift: Shift) -> Option<Self> {
-        Some(Self::Reg {
+        Some(Self::Reg(ShiftedRegister {
             reg,
             shift: Some(shift),
-        })
+        }))
     }
 
     pub fn unsigned(imm: u32) -> Option<Self> {
@@ -621,7 +643,7 @@ impl fmt::Display for Instruction {
                 None => {
                     break;
                 }
-                Some(Operand::Reg { reg, shift }) => {
+                Some(Operand::Reg(ShiftedRegister { reg, shift })) => {
                     if i != 0 {
                         operand_str.push_str(", ");
                     }
@@ -654,6 +676,7 @@ impl fmt::Display for Instruction {
                     }
                     _ => todo!(),
                 },
+                _ => todo!(),
             }
         }
         write!(
@@ -669,6 +692,7 @@ impl fmt::Display for Instruction {
 
 #[cfg(test)]
 mod tests {
+    use std::mem::size_of;
     use std::str::FromStr;
 
     use super::{
