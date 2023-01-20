@@ -99,15 +99,8 @@ impl TryFrom<u32> for Register {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-/// TBD if this is actually useful. Maybe should have Signed(u32) instead (i.e. do the cast later)?
-pub enum ImmValue {
-    Signed(i32),
-    Unsigned(u32),
-}
-
 #[derive(Copy, Clone, Debug, PartialEq, Eq, EnumString)]
-pub enum ShiftType {
+pub enum ShiftOp {
     LSL,
     LSR,
     ASR,
@@ -116,15 +109,15 @@ pub enum ShiftType {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum Shift {
-    RegShift {
-        shift_type: ShiftType,
-        shift_reg: Register,
-    },
-    ImmShift {
-        shift_type: ShiftType,
-        shift_amt: ImmValue,
-    },
+pub enum ShiftType {
+    Reg(Register),
+    Imm(u32),
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct Shift {
+    pub shift_type: ShiftType,
+    pub op: ShiftOp,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -137,39 +130,25 @@ pub enum AddrMode {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Address {
     pub base: Register,
-    pub shift: Option<Shift>,
     pub mode: AddrMode,
     pub write_back: bool,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct ShiftedRegister {
-    pub reg: Register,
-    pub shift: Option<Shift>,
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Operand {
-    Reg(ShiftedRegister),
-    Imm(ImmValue),
+    Reg(Register),
+    Imm(u32),
     Addr(Address),
 }
 
 /// Helper methods for filling out operand lists
 impl Operand {
-    pub fn unshifted(reg: Register) -> Option<Self> {
-        Some(Self::Reg(ShiftedRegister { reg, shift: None }))
+    pub fn register(reg: Register) -> Option<Self> {
+        Some(Self::Reg(reg))
     }
 
-    pub fn shifted(reg: Register, shift: Shift) -> Option<Self> {
-        Some(Self::Reg(ShiftedRegister {
-            reg,
-            shift: Some(shift),
-        }))
-    }
-
-    pub fn unsigned(imm: u32) -> Option<Self> {
-        Some(Self::Imm(ImmValue::Unsigned(imm)))
+    pub fn immediate(imm: u32) -> Option<Self> {
+        Some(Self::Imm(imm))
     }
 }
 
@@ -620,6 +599,8 @@ pub struct Instruction {
     pub cond: Cond,
     pub op: Op,
     pub operands: [Option<Operand>; MAX_NUM_OPERANDS],
+    // will need to move back to Operand if it's ever possible to have more than 1 per op
+    pub shift: Option<Shift>,
     pub set_flags: bool,
 }
 
@@ -629,6 +610,7 @@ impl Default for Instruction {
             cond: Cond::AL,
             op: Op::NOP,
             operands: [None; 4],
+            shift: None,
             set_flags: false,
         }
     }
@@ -643,40 +625,26 @@ impl fmt::Display for Instruction {
                 None => {
                     break;
                 }
-                Some(Operand::Reg(ShiftedRegister { reg, shift })) => {
+                Some(Operand::Reg(reg)) => {
                     if i != 0 {
                         operand_str.push_str(", ");
                     }
                     write!(operand_str, "{:?}", reg)?;
-                    match shift {
-                        Some(Shift::ImmShift {
-                            shift_type,
-                            shift_amt,
-                        }) => {
-                            write!(operand_str, ", {:?}", shift_type)?;
-                            match shift_amt {
-                                ImmValue::Unsigned(x) => {
-                                    write!(operand_str, ", #{}", x)?;
-                                }
-                                _ => todo!(),
-                            }
-                        }
-                        Some(Shift::RegShift {
-                            shift_type,
-                            shift_reg,
-                        }) => {
-                            write!(operand_str, ", {:?} {:?}", shift_type, shift_reg)?;
-                        }
-                        _ => {}
-                    }
                 }
-                Some(Operand::Imm(imm)) => match imm {
-                    ImmValue::Unsigned(x) => {
-                        write!(operand_str, ", #{}", x)?;
-                    }
-                    _ => todo!(),
-                },
+                Some(Operand::Imm(imm)) => {
+                    write!(operand_str, ", #{}", imm)?;
+                }
                 _ => todo!(),
+            }
+        }
+        if let Some(shift) = self.shift {
+            match shift.shift_type {
+                ShiftType::Reg(reg) => {
+                    write!(operand_str, ", {:?} {:?}", shift.op, reg)?;
+                }
+                ShiftType::Imm(imm) => {
+                    write!(operand_str, ", {:?} {}", shift.op, imm)?;
+                }
             }
         }
         write!(
@@ -709,9 +677,9 @@ mod tests {
             cond: EQ,
             op: AND,
             operands: [
-                Operand::unshifted(R12),
-                Operand::unshifted(PC),
-                Operand::unsigned(12),
+                Operand::register(R12),
+                Operand::register(PC),
+                Operand::immediate(12),
                 None,
             ],
             ..Default::default()

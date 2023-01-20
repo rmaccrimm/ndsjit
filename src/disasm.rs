@@ -75,9 +75,9 @@ mod tests {
                 cond: EQ,
                 op: AND,
                 operands: [
-                    Operand::unshifted(R12),
-                    Operand::unshifted(PC),
-                    Operand::unsigned(12),
+                    Operand::register(R12),
+                    Operand::register(PC),
+                    Operand::immediate(12),
                     None
                 ],
                 ..Default::default()
