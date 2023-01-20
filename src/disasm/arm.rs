@@ -1,4 +1,6 @@
-use super::armv4t::{Cond, ImmValue, Instruction, Op, Operand, Register, Shift, ShiftType};
+use super::armv4t::{
+    Cond, ImmValue, Instruction, Op, Operand, Register, Shift, ShiftType, ShiftedRegister,
+};
 use super::bits::{bit, bit_match, bits};
 use super::{DisasmError, DisasmResult};
 
@@ -20,12 +22,8 @@ pub fn arm_data_proc_and_misc(instr: u32) -> DisasmResult {
             (x, y) if bit_match(x, "10xx0") && bit_match(y, "1xx0") => arm_halfword_mult(instr),
             (x, y) if bit_match(x, "0xxxx") && y == 0b1001 => arm_mult(instr),
             (x, y) if bit_match(x, "1xxxx") && y == 0b1001 => arm_sync(instr),
-            (x, y) if !bit_match(x, "0xx1x") && y == 0b1011 => arm_extra_load_store(instr),
-            (x, y) if !bit_match(x, "0xx1x") && bit_match(y, "11x1") => arm_extra_load_store(instr),
-            (x, y) if bit_match(x, "0xx10") && bit_match(y, "11x1") => arm_extra_load_store(instr),
-            (x, y) if bit_match(x, "0xx1x") && y == 0b1011 => arm_extra_load_store(instr),
-            (x, y) if bit_match(x, "0xx11") && bit_match(y, "11x1") => arm_extra_load_store(instr),
-            (_, _) => Err(DisasmError::unknown(instr)),
+            (_, y) if bit_match(y, "1xx1") => arm_extra_load_store(instr),
+            (_, _) => Err(DisasmError::undefined(instr)),
         }
     } else {
         match op1 {
@@ -191,7 +189,7 @@ fn arm_data_proc_reg(instr: u32) -> DisasmResult {
         }
         Op::MVN => {
             result.operands[0] = Operand::unshifted(rd);
-            result.operands[1] = Some(Operand::Reg { reg: rm, shift });
+            result.operands[1] = Some(Operand::Reg(ShiftedRegister { reg: rm, shift }));
         }
         Op::MOV | Op::RRX => {
             result.operands[0] = Operand::unshifted(rd);
@@ -206,12 +204,12 @@ fn arm_data_proc_reg(instr: u32) -> DisasmResult {
         }
         Op::TEQ | Op::TST | Op::CMN | Op::CMP => {
             result.operands[0] = Operand::unshifted(rn);
-            result.operands[1] = Some(Operand::Reg { reg: rm, shift });
+            result.operands[1] = Some(Operand::Reg(ShiftedRegister { reg: rm, shift }));
         }
         _ => {
             result.operands[0] = Operand::unshifted(rd);
             result.operands[1] = Operand::unshifted(rn);
-            result.operands[2] = Some(Operand::Reg { reg: rm, shift });
+            result.operands[2] = Some(Operand::Reg(ShiftedRegister { reg: rm, shift }));
         }
     }
     Ok(result)
@@ -254,6 +252,7 @@ fn arm_data_proc_shift_reg(instr: u32) -> DisasmResult {
                 instr,
             ));
         }
+        // NOTE - could also encode these as a MOV
         Op::LSL | Op::LSR | Op::ASR | Op::ROR => {
             // These instructions are actually the register versions, even though their encodings
             // place them in the "data-processing (register-shifted register)" category.
@@ -325,23 +324,163 @@ fn arm_data_proc_imm(instr: u32) -> DisasmResult {
 }
 
 fn arm_misc(instr: u32) -> DisasmResult {
-    todo!()
+    let op = bits(instr, 21..22);
+    let op1 = bits(instr, 16..19);
+    let op2 = bits(instr, 4..6);
+    let b = bit(instr, 9);
+
+    let match_only = |x: u32, match_val: u32, ret_val: Op| {
+        (x == match_val)
+            .then_some(ret_val)
+            .ok_or(DisasmError::undefined(instr))
+    };
+
+    let op = match (op2, b, op) {
+        // Not sure yet what the special registers are. Possibly need a new enum for them?
+        (0b000, 0b0, 0b00) => todo!(), // MRS
+        (0b000, 0b0, 0b10) => todo!(), // MRS
+        (0b000, 0b0, _) => todo!(),    // MSR
+        (0b001, _, 0b01) => Op::BX,
+        _ => {
+            return Err(DisasmError::undefined(instr));
+        }
+    };
+
+    let cond = Cond::try_from(bits(instr, 28..31))?;
+    let rm = Register::try_from(bits(instr, 0..3))?;
+    Ok(Instruction {
+        cond,
+        op,
+        operands: [Operand::unshifted(rm), None, None, None],
+        set_flags: false,
+    })
 }
 
 fn arm_mult(instr: u32) -> DisasmResult {
-    todo!()
+    let op = match bits(instr, 21..23) {
+        0b000 => Op::MUL,
+        0b001 => Op::MLA,
+        0b100 => Op::UMULL,
+        0b101 => Op::UMLAL,
+        0b110 => Op::SMULL,
+        0b111 => Op::SMLAL,
+        _ => {
+            return Err(DisasmError::undefined(instr));
+        }
+    };
+    let rd = Register::try_from(bits(instr, 16..19))?;
+    let ra = Register::try_from(bits(instr, 12..15))?;
+    let rm = Register::try_from(bits(instr, 8..11))?;
+    let rn = Register::try_from(bits(instr, 0..3))?;
+    let s = bit(instr, 20) == 1;
+
+    let mut instr = Instruction::default();
+    match op {
+        Op::MUL => {
+            instr.operands[0] = Operand::unshifted(rd);
+            instr.operands[1] = Operand::unshifted(rn);
+            instr.operands[2] = Operand::unshifted(rm);
+        }
+        Op::MLA | Op::UMULL | Op::SMULL | Op::SMLAL => {
+            instr.operands[0] = Operand::unshifted(rd);
+            instr.operands[1] = Operand::unshifted(rn);
+            instr.operands[2] = Operand::unshifted(rm);
+            instr.operands[3] = Operand::unshifted(ra);
+        }
+        _ => unreachable!(),
+    }
+    Ok(instr)
 }
 
 fn arm_halfword_mult(instr: u32) -> DisasmResult {
-    todo!()
+    Err(DisasmError::new("halfword multiply instructions undefined in ARMv4T", instr))
 }
 
 fn arm_sync(instr: u32) -> DisasmResult {
-    todo!()
+    let op = match bits(instr, 20..23) {
+        0b0000 => Op::SWP,
+        0b0100 => Op::SWPB,
+        _ => {
+            return Err(DisasmError::undefined(instr));
+        }
+    };
+
+    let instr = Instruction::default();
+    Ok(instr)
 }
 
 fn arm_extra_load_store(instr: u32) -> DisasmResult {
-    todo!()
+    let op1 = (bit(instr, 22) << 1) | (bit(instr, 20));
+    let op2 = bits(instr, 5..6);
+
+    let (op, imm) = match op2 {
+        0b01 => match op1 {
+            0b00 => (Op::STRH, false),
+            0b01 => (Op::LDRH, false),
+            0b10 => (Op::STRH, true),
+            0b11 => (Op::LDRH, true),
+            _ => unreachable!(),
+        },
+        0b10 => match op1 {
+            0b01 => (Op::LDRSB, false),
+            0b11 => (Op::LDRSB, true),
+            _ => {
+                return Err(DisasmError::undefined(instr));
+            }
+        },
+        0b11 => match op1 {
+            0b00 => (Op::STRD, false),
+            0b01 => (Op::LDRSH, false),
+            0b10 => (Op::STRD, true),
+            0b11 => (Op::LDRSH, true),
+            _ => unreachable!(),
+        },
+        _ => {
+            return Err(DisasmError::undefined(instr));
+        }
+    };
+
+    let rm = Register::try_from(bits(instr, 0..3))?;
+    let rt = Register::try_from(bits(instr, 12..15))?;
+    let rn = Register::try_from(bits(instr, 16..19))?;
+    let w = bit(instr, 21);
+    let p = bit(instr, 24);
+    let imm8 = (bits(instr, 8..11) << 4) | bits(instr, 0..3);
+
+    if p == 0 && w == 1 {
+        return Err(DisasmError::undefined(instr));
+    }
+    let mut instr = Instruction::default();
+    let index = p == 1;
+    let write_back = p == 0 || w == 1;
+    // let addr_mode = match (index, write_back) {
+    //
+    // }
+
+    match op {
+        Op::STRD => {
+            let rt2 = Register::try_from(rt as u32 + 1)?;
+            instr.operands[0] = Operand::unshifted(rt);
+            instr.operands[1] = Operand::unshifted(rt2);
+            instr.operands[2] = Operand::unshifted(rn);
+            instr.operands[3] = if imm {
+                Operand::unsigned(imm8)
+            } else {
+                Operand::unshifted(rm)
+            };
+        }
+        _ => {
+            instr.operands[0] = Operand::unshifted(rt);
+            instr.operands[1] = Operand::unshifted(rn);
+            instr.operands[2] = if imm {
+                Operand::unsigned(imm8)
+            } else {
+                Operand::unshifted(rm)
+            };
+        }
+    }
+
+    Ok(instr)
 }
 
 fn arm_msr_and_hints(instr: u32) -> DisasmResult {

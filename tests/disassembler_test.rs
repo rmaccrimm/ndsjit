@@ -29,6 +29,7 @@ const SHIFT_OPS: [&str; 6] = ["LSL", "LSR", "ASR", "ROR", "RRX", ""];
 struct AsmGenerator {
     op: String,
     num_regs: usize,
+    cond: bool,
     suffix: bool,
     shift: bool,
     shift_reg: bool,
@@ -41,6 +42,7 @@ impl AsmGenerator {
         Self {
             op: op.into(),
             num_regs: 0,
+            cond: true,
             suffix: true,
             shift: false,
             shift_reg: false,
@@ -51,6 +53,11 @@ impl AsmGenerator {
 
     fn no_suffix(&mut self) -> &mut Self {
         self.suffix = false;
+        self
+    }
+
+    fn no_cond(&mut self) -> &mut Self {
+        self.cond = false;
         self
     }
 
@@ -94,7 +101,11 @@ impl AsmGenerator {
         {
             let mut line = String::new();
             let op = &self.op;
-            let cond = COND_OPTS.choose(&mut rng).unwrap();
+            let cond = if self.cond {
+                COND_OPTS.choose(&mut rng).unwrap()
+            } else {
+                ""
+            };
             let s = if self.suffix {
                 S_OPTS.choose(&mut rng).unwrap()
             } else {
@@ -190,6 +201,9 @@ fn gas_assemble_input(input: String) -> String {
         .wait_with_output()
         .expect("failed to wait on process");
 
+    let out = String::from_utf8(output.stdout).unwrap();
+    dbg!(out.clone());
+
     let err_str = String::from_utf8(output.stderr).unwrap();
     for line in err_str.lines() {
         println!("{}", line);
@@ -198,14 +212,11 @@ fn gas_assemble_input(input: String) -> String {
         panic!("Failed to assemble input");
     }
 
-    String::from_utf8(output.stdout).unwrap()
+    out
 }
 
-/// Parses the gas listing, passing the encoding to the disassembler and compares the output against
-/// the instruction parsed from the assembly
-fn disassembler_test_case(input: &str) {
-    let output = gas_assemble_input(input.to_string());
-    for line in output.lines() {
+fn disassemble_and_compare(gas_output: &str) {
+    for line in gas_output.lines() {
         match AsmLine::from_str(line) {
             Ok(asm_line) => {
                 assert_eq!(
@@ -221,8 +232,15 @@ fn disassembler_test_case(input: &str) {
     }
 }
 
+/// Parses the gas listing, passing the encoding to the disassembler and compares the output against
+/// the instruction parsed from the assembly
+fn disassembler_test_case(input: &str) {
+    let output = gas_assemble_input(input.to_string());
+    disassemble_and_compare(&output);
+}
+
 #[rstest]
-fn test_disasm_data_proc_instr_reg_shift(
+fn test_disasm_data_proc_reg_shift(
     #[values("AND", "EOR", "SUB", "RSB", "ADD", "ADC", "SBC", "RSC", "ORR", "BIC")] op: &str,
 ) {
     disassembler_test_case(
@@ -236,7 +254,7 @@ fn test_disasm_data_proc_instr_reg_shift(
 }
 
 #[rstest]
-fn test_disasm_data_proc_instr_imm_shift(
+fn test_disasm_data_proc_imm_shift(
     #[values("AND", "EOR", "SUB", "RSB", "ADD", "ADC", "SBC", "RSC", "ORR", "BIC")] op: &str,
 ) {
     disassembler_test_case(
@@ -250,7 +268,7 @@ fn test_disasm_data_proc_instr_imm_shift(
 }
 
 #[rstest]
-fn test_disasm_data_proc_instr_imm(
+fn test_disasm_data_proc_imm(
     #[values("AND", "EOR", "SUB", "RSB", "ADD", "ADC", "SBC", "RSC", "ORR", "BIC")] op: &str,
 ) {
     disassembler_test_case(
@@ -263,7 +281,7 @@ fn test_disasm_data_proc_instr_imm(
 }
 
 #[rstest]
-fn test_disasm_comparison_instr_reg_shift(#[values("TST", "TEQ", "CMP", "CMN", "MVN")] op: &str) {
+fn test_disasm_comparison_reg_shift(#[values("TST", "TEQ", "CMP", "CMN", "MVN")] op: &str) {
     disassembler_test_case(
         &AsmGenerator::new(op)
             .no_suffix()
@@ -275,7 +293,7 @@ fn test_disasm_comparison_instr_reg_shift(#[values("TST", "TEQ", "CMP", "CMN", "
 }
 
 #[rstest]
-fn test_disasm_comparison_instr_imm_shift(#[values("TST", "TEQ", "CMP", "CMN", "MVN")] op: &str) {
+fn test_disasm_comparison_imm_shift(#[values("TST", "TEQ", "CMP", "CMN", "MVN")] op: &str) {
     disassembler_test_case(
         &AsmGenerator::new(op)
             .no_suffix()
@@ -287,7 +305,7 @@ fn test_disasm_comparison_instr_imm_shift(#[values("TST", "TEQ", "CMP", "CMN", "
 }
 
 #[rstest]
-fn test_disasm_comparison_instr_imm(#[values("TST", "TEQ", "CMP", "CMN", "MVN")] op: &str) {
+fn test_disasm_comparison_imm(#[values("TST", "TEQ", "CMP", "CMN", "MVN")] op: &str) {
     disassembler_test_case(
         &AsmGenerator::new(op)
             .no_suffix()
@@ -298,7 +316,7 @@ fn test_disasm_comparison_instr_imm(#[values("TST", "TEQ", "CMP", "CMN", "MVN")]
 }
 
 #[rstest]
-fn test_disasm_shift_instr_imm(#[values("LSL", "LSR", "ASR", "ROR")] op: &str) {
+fn test_disasm_shift_imm(#[values("LSL", "LSR", "ASR", "ROR")] op: &str) {
     disassembler_test_case(
         &AsmGenerator::new(op)
             .register()
@@ -310,7 +328,7 @@ fn test_disasm_shift_instr_imm(#[values("LSL", "LSR", "ASR", "ROR")] op: &str) {
 }
 
 #[rstest]
-fn test_disasm_shift_instr_reg(#[values("LSL", "LSR", "ASR", "ROR")] op: &str) {
+fn test_disasm_shift_reg(#[values("LSL", "LSR", "ASR", "ROR")] op: &str) {
     disassembler_test_case(
         &AsmGenerator::new(op)
             .register()
@@ -332,7 +350,30 @@ fn test_disasm_instr_MOV() {
 }
 
 #[rstest]
-fn test_disasm_instr_RRX() {
+fn test_disasm_RRX() {
     // Assembler complains about RRX<cond> without S flag. Probably overlaps with ROR or something?
     // disassembler_test_case(&AsmGenerator::new("RRX").register().register().generate());
+}
+
+#[rstest]
+fn test_disasm_BX() {
+    // Hard-coding this case because BX pc gives an error (but still assembles)
+    let gas_output = "
+        1 0000 E12FFF10      BX r0\n
+        2 0004 E12FFF11      BX r1\n
+        3 0008 E12FFF12      BX r2\n
+        4 000c E12FFF13      BX r3\n
+        5 0010 E12FFF14      BX r4\n
+        6 0014 E12FFF15      BX r5\n
+        7 0018 E12FFF16      BX r6\n
+        8 001c E12FFF17      BX r7\n
+        9 0020 E12FFF18      BX r8\n
+        10 0024 E12FFF19     BX r9\n
+        11 0028 E12FFF1A     BX r10\n
+        12 002c E12FFF1B     BX r11\n
+        13 0030 E12FFF1C     BX r12\n
+        14 0034 E12FFF1D     BX sp\n
+        15 0038 E12FFF1E     BX lr\n
+        16 003c E12FFF1F     BX pc";
+    disassemble_and_compare(&gas_output);
 }
