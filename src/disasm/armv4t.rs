@@ -2,6 +2,8 @@ use super::DisasmError;
 use std::convert::TryFrom;
 use std::fmt;
 use std::fmt::Write;
+use std::str::FromStr;
+use std::string::ParseError;
 use strum::EnumString;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, EnumString)]
@@ -156,20 +158,15 @@ impl Operand {
 pub enum Op {
     UNDEFINED,
     ADC,
-    ADCS,
     ADD,
-    ADDS,
     ADDW,
     ADR, // Encoded as ADD/SUB PC
     AND,
-    ANDS,
     ASR,
-    ASRS,
     B,
     BFC,
     BFI,
     BIC,
-    BICS,
     BKPT,
     BL,
     BLX,
@@ -235,9 +232,7 @@ pub enum Op {
     LDRT,
     LEAVEX,
     LSL,
-    LSLS,
     LSR,
-    LSRS,
     MCR,
     MCR2,
     MCRR,
@@ -245,7 +240,6 @@ pub enum Op {
     MLA,
     MLS,
     MOV,
-    MOVS,
     MOVT,
     MOVW,
     MRC,
@@ -255,13 +249,10 @@ pub enum Op {
     MRS,
     MSR,
     MUL,
-    MULS,
     MVN,
-    MVNS,
     NOP,
     ORN,
     ORR,
-    ORRS,
     PKHBT,
     PKHTB,
     PLD,
@@ -289,10 +280,8 @@ pub enum Op {
     RFEIA,
     RFEIB,
     ROR,
-    RORS,
     RRX,
     RSB,
-    RSBS,
     RSC,
     SADD16,
     SADD8,
@@ -387,7 +376,6 @@ pub enum Op {
     STRHT,
     STRT,
     SUB,
-    SUBS,
     SUBW,
     SVC,
     SWP,
