@@ -4,7 +4,7 @@ use std::fmt;
 use std::fmt::Write;
 use std::str::FromStr;
 use std::string::ParseError;
-use strum::EnumString;
+use strum::{Display, EnumString};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, EnumString)]
 pub enum Cond {
@@ -154,7 +154,7 @@ impl Operand {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, EnumString)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, EnumString, Display)]
 pub enum Op {
     UNDEFINED,
     ADC,
