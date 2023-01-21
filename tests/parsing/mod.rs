@@ -1,6 +1,4 @@
-use ndsjit::disasm::armv4t::{
-    Cond, ImmValue, Instruction, Op, Operand, Register, Shift, ShiftType,
-};
+use ndsjit::disasm::armv4t::{Cond, Instruction, Op, Operand, Register, Shift, ShiftOp, ShiftType};
 use std::error::Error;
 use std::fmt::Display;
 use std::ops::Range;
@@ -14,7 +12,7 @@ pub struct AsmLine {
     pub instr: Instruction,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ParseError {
     FormatError,
     FieldError { field: String, value: String },
@@ -46,21 +44,23 @@ fn parse_hex(name: &str, val: &str) -> Result<u32, ParseError> {
 }
 
 fn parse_str_range<T: FromStr>(name: &str, val: &str, i: Range<usize>) -> Result<T, ParseError> {
-    val.get(i)
+    let res = val
+        .get(i)
         .map(|s| s.parse().ok())
         .flatten()
-        .ok_or(ParseError::for_field(name, val))
+        .ok_or(ParseError::for_field(name, val));
+    res
 }
 
-fn parse_operand_no_shift(input: &str) -> Result<Operand, ParseError> {
+fn parse_operand(input: &str) -> Result<Operand, ParseError> {
     let input = input.trim();
     let parse_err = || ParseError::for_field("operand", input);
     if let Ok(reg) = Register::from_str(input) {
-        Ok(Operand::Reg { reg, shift: None })
+        Ok(Operand::Reg(reg))
     } else if input.starts_with("#") {
         let rest = input.get(1..).ok_or(parse_err())?;
         let i = parse_dec("operand", rest)?;
-        Ok(Operand::unsigned(i).unwrap())
+        Ok(Operand::Imm(i))
     } else {
         Err(parse_err())
     }
@@ -68,59 +68,60 @@ fn parse_operand_no_shift(input: &str) -> Result<Operand, ParseError> {
 
 fn parse_shift(input: &str) -> Result<Shift, ParseError> {
     let parse_err = ParseError::for_field("shift", input);
-    let kind: ShiftType = parse_str_range("shift", input, 0..3)?;
-    if let ShiftType::RRX = kind {
+    let op: ShiftOp = parse_str_range("shift", input, 0..3)?;
+    if let ShiftOp::RRX = op {
         if input.len() > 3 {
             return Err(parse_err);
         } else {
-            return Ok(Shift::ImmShift {
-                shift_type: kind,
-                shift_amt: ImmValue::Unsigned(1),
+            return Ok(Shift {
+                shift_type: ShiftType::Imm(1),
+                op,
             });
         }
     }
-    let by = parse_operand_no_shift(input.get(3..).ok_or(parse_err)?)?;
+    let by = parse_operand(input.get(3..).ok_or(parse_err)?)?;
     match by {
-        Operand::Imm(imm) => Ok(Shift::ImmShift {
-            shift_type: kind,
-            shift_amt: imm,
+        Operand::Imm(imm) => Ok(Shift {
+            op: op,
+            shift_type: ShiftType::Imm(imm),
         }),
-        Operand::Reg { reg, shift: _ } => Ok(Shift::RegShift {
-            shift_type: kind,
-            shift_reg: reg,
+        Operand::Reg(reg) => Ok(Shift {
+            op: op,
+            shift_type: ShiftType::Reg(reg),
         }),
+        _ => Err(ParseError::for_field("shift", input)),
     }
 }
 
-fn parse_operands(input: &str) -> Result<Vec<Operand>, ParseError> {
-    let mut split = input.split(",");
-    let parse_err = || ParseError::for_field("operands", input);
+fn parse_set_flags(c: &str) -> Result<bool, ParseError> {
+    (c.to_uppercase() == "S")
+        .then_some(true)
+        .ok_or(ParseError::for_field("S", c))
+}
 
-    let mut ops: Vec<Operand> = Vec::new();
-    let mut curr = split.next().ok_or(parse_err())?.trim();
-    let mut next = split.next();
-    loop {
-        let mut op = parse_operand_no_shift(curr)?;
-        if let Operand::Reg { reg, shift: _ } = op {
-            if let Some(s) = next {
-                // Search next token for a shift
-                if let Ok(shift) = parse_shift(s.trim()) {
-                    op = Operand::Reg {
-                        reg,
-                        shift: Some(shift),
-                    };
-                    next = split.next();
-                }
-            }
-        }
-        ops.push(op);
-        if next.is_none() {
-            break;
-        }
-        curr = next.unwrap().trim();
-        next = split.next();
+fn parse_mnemonic(input: &str) -> Result<(Op, Cond, bool), ParseError> {
+    let err = ParseError::for_field("op", input);
+    if input.len() < 1 {
+        return Err(err.clone());
     }
-    Ok(ops)
+    // Find the longest substring that converts to an Op
+    let op = (1..=input.len())
+        .rev()
+        .find_map(|i| parse_str_range("op", input, 0..i).ok());
+    let op: Op = op.ok_or(err.clone())?;
+    let s = op.to_string().len();
+    match input.len() - s {
+        3 => Ok((
+            op,
+            parse_str_range("cond", input, s..s + 2)?,
+            parse_set_flags(&input[s + 2..s + 3])?,
+        )),
+        2 => Ok((op, parse_str_range("cond", input, s..s + 2)?, false)),
+        1 => Ok((op, Cond::AL, parse_set_flags(&input[s..s + 1])?)),
+        0 => Ok((op, Cond::AL, false)),
+        _ => Err(err.clone()),
+    }
+    // MLS - test this, MRS,
 }
 
 /// Parse a line of output from gnu-as
@@ -139,36 +140,26 @@ impl FromStr for AsmLine {
         let ind: usize = parse_dec("index", next_split()?)?;
         let addr = parse_hex("address", next_split()?)?;
         let encoding = parse_hex("encoding", next_split()?)?;
-        let mnemonic = next_split()?;
-        // problem - Not all ops are 3 letters
-        let op: Op = parse_str_range("op", mnemonic, 0..3)?;
-        let cond: Cond = parse_str_range("cond", mnemonic, 3..5)?;
-
-        let s = match mnemonic.get(5..6) {
-            Some(s) => match s.to_uppercase() == "S" {
-                true => Ok(true),
-                false => Err(ParseError::for_field("S", mnemonic)),
-            },
-            None => Ok(false),
-        }?;
-
-        let rest = split.collect::<Vec<&str>>().join(" ");
-        let operands = parse_operands(&rest)?;
-        if operands.len() > 3 {
-            return Err(ParseError::for_field("operands", &rest));
-        }
+        let (op, cond, s) = parse_mnemonic(next_split()?)?;
 
         let mut instr = Instruction {
             cond,
             op,
-            operands: [
-                operands.get(0).cloned(),
-                operands.get(1).cloned(),
-                operands.get(2).cloned(),
-                None,
-            ],
             set_flags: s,
+            ..Default::default()
         };
+
+        let rest = split.collect::<Vec<&str>>().join(" ");
+        for (i, s) in rest.split(",").enumerate() {
+            match parse_operand(s) {
+                Ok(operand) => {
+                    instr.operands[i] = Some(operand);
+                }
+                Err(_) => {
+                    instr.shift = Some(parse_shift(s)?);
+                }
+            }
+        }
 
         // These instructions always set flags and do not support the S suffix
         if [Op::TEQ, Op::TST, Op::CMN, Op::CMP].contains(&instr.op) {
@@ -187,46 +178,13 @@ impl FromStr for AsmLine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ndsjit::disasm::armv4t::{ImmValue, Register::*, ShiftType::*};
+    use ndsjit::disasm::armv4t::{Op, Register::*, Shift, ShiftOp::*, ShiftType};
 
     #[test]
-    fn test_parse_operand_no_shift() -> Result<(), ParseError> {
-        assert_eq!(parse_operand_no_shift("sp")?, Operand::unshifted(SP).unwrap());
-        assert_eq!(parse_operand_no_shift("#123494")?, Operand::unsigned(123494).unwrap());
-        assert!(parse_operand_no_shift("LSL #1234").is_err());
-        Ok(())
-    }
-
-    #[test]
-    fn test_parse_operands() -> Result<(), ParseError> {
-        let res = parse_operands("lr, ROR #123,pc , LSL r1,r2, r3, #99")?;
-        assert_eq!(
-            res[0],
-            Operand::shifted(
-                LR,
-                Shift::ImmShift {
-                    shift_type: ROR,
-                    shift_amt: ImmValue::Unsigned(123)
-                }
-            )
-            .unwrap()
-        );
-        assert_eq!(
-            res[1],
-            Operand::shifted(
-                PC,
-                Shift::RegShift {
-                    shift_type: LSL,
-                    shift_reg: R1
-                }
-            )
-            .unwrap()
-        );
-        assert_eq!(res[2], Operand::unshifted(R2).unwrap());
-        assert_eq!(res[3], Operand::unshifted(R3).unwrap());
-        assert_eq!(res[4], Operand::unsigned(99).unwrap());
-
-        assert!(parse_operands("lqq, ROR #123, pc").is_err());
+    fn test_parse_operand() -> Result<(), ParseError> {
+        assert_eq!(parse_operand("sp")?, Operand::Reg(SP));
+        assert_eq!(parse_operand("#123494")?, Operand::Imm(123494));
+        assert!(parse_operand("LSL #1234").is_err());
         Ok(())
     }
 
@@ -244,24 +202,16 @@ mod tests {
                     cond: Cond::GE,
                     op: Op::AND,
                     operands: [
-                        Some(Operand::Reg {
-                            reg: Register::SP,
-                            shift: None
-                        }),
-                        Some(Operand::Reg {
-                            reg: Register::LR,
-                            shift: None
-                        }),
-                        Some(Operand::Reg {
-                            reg: Register::R4,
-                            shift: Some(Shift::RegShift {
-                                shift_type: ShiftType::LSL,
-                                shift_reg: Register::R6
-                            })
-                        }),
+                        Some(Operand::Reg(SP)),
+                        Some(Operand::Reg(LR)),
+                        Some(Operand::Reg(R4)),
                         None,
                     ],
-                    set_flags: false
+                    set_flags: false,
+                    shift: Some(Shift {
+                        op: LSL,
+                        shift_type: ShiftType::Reg(R6),
+                    })
                 }
             }
         );
@@ -285,18 +235,26 @@ mod tests {
     fn test_parse_shift() -> Result<(), ParseError> {
         assert_eq!(
             parse_shift("LSL#23")?,
-            Shift::ImmShift {
-                shift_type: LSL,
-                shift_amt: ImmValue::Unsigned(23)
+            Shift {
+                op: LSL,
+                shift_type: ShiftType::Imm(23)
             }
         );
         assert_eq!(
-            parse_shift("RRX").unwrap(),
-            Shift::ImmShift {
-                shift_type: RRX,
-                shift_amt: ImmValue::Unsigned(1)
+            parse_shift("RRX")?,
+            Shift {
+                op: RRX,
+                shift_type: ShiftType::Imm(1)
             }
         );
         Ok(())
+    }
+
+    #[test]
+    fn test_parse_mnemonic() {
+        assert_eq!(parse_mnemonic("MLS").unwrap(), (Op::MLS, Cond::AL, false));
+        assert_eq!(parse_mnemonic("MLSLS").unwrap(), (Op::MLS, Cond::LS, false));
+        assert_eq!(parse_mnemonic("MLSLSS").unwrap(), (Op::MLS, Cond::LS, true));
+        assert_eq!(parse_mnemonic("MLSS").unwrap(), (Op::MLS, Cond::AL, true));
     }
 }
