@@ -1,4 +1,6 @@
-use super::armv4t::{Cond, Instruction, Op, Operand, Register, Shift, ShiftOp, ShiftType};
+use super::armv4t::{
+    Cond, ExtraOperand, ImmShift, Instruction, Op, Operand, RegShift, Register, Shift, ShiftOp,
+};
 use super::bits::{bit, bit_match, bits};
 use super::{DisasmError, DisasmResult};
 
@@ -113,48 +115,6 @@ fn decode_data_proc_op(
     Ok(op)
 }
 
-/// Implements DecodeImmShift pseudo-code function. Argument shift_type must be a 2-bit value
-fn decode_imm_shift(shift_type: u32, imm5: u32) -> Option<Shift> {
-    let shift = match shift_type {
-        0b00 => Shift {
-            op: ShiftOp::LSL,
-            shift_type: ShiftType::Imm(imm5),
-        },
-        0b01 => {
-            let shift_amt = if imm5 == 0 { 32 } else { imm5 };
-            Shift {
-                op: ShiftOp::LSR,
-                shift_type: ShiftType::Imm(shift_amt),
-            }
-        }
-        0b10 => {
-            let shift_amt = if imm5 == 0 { 32 } else { imm5 };
-            Shift {
-                op: ShiftOp::ASR,
-                shift_type: ShiftType::Imm(shift_amt),
-            }
-        }
-        0b11 => {
-            if imm5 == 0 {
-                Shift {
-                    op: ShiftOp::RRX,
-                    shift_type: ShiftType::Imm(1),
-                }
-            } else {
-                Shift {
-                    op: ShiftOp::ROR,
-                    shift_type: ShiftType::Imm(imm5),
-                }
-            }
-        }
-        _ => unreachable!(),
-    };
-    if let ShiftType::Imm(0) = shift.shift_type {
-        return None;
-    }
-    Some(shift)
-}
-
 /// Decode data-processing instructions with a register operand  that can optionally be shifted by a
 ///  constant amount, and shift by constant instructions
 fn arm_data_proc_reg(instr: u32) -> DisasmResult {
@@ -172,7 +132,7 @@ fn arm_data_proc_reg(instr: u32) -> DisasmResult {
     let rn = Register::try_from(bits(instr, 16..19))?;
     let rm = Register::try_from(bits(instr, 0..3))?;
     let imm5 = bits(instr, 7..11);
-    let shift = decode_imm_shift(bits(instr, 5..6), imm5);
+    let shift: Option<ExtraOperand> = ImmShift::decode(bits(instr, 5..6), imm5).map(|s| s.into());
 
     match op {
         Op::ADR => {
@@ -182,31 +142,31 @@ fn arm_data_proc_reg(instr: u32) -> DisasmResult {
             ));
         }
         Op::MVN => {
-            result.operands[0] = Operand::register(rd);
+            result.operands[0] = Some(Operand::Reg(rd));
             result.operands[1] = Some(Operand::Reg(rm));
-            result.shift = shift;
+            result.extra = shift;
         }
         Op::MOV | Op::RRX => {
-            result.operands[0] = Operand::register(rd);
-            result.operands[1] = Operand::register(rm);
+            result.operands[0] = Some(Operand::Reg(rd));
+            result.operands[1] = Some(Operand::Reg(rm));
         }
         Op::LSL | Op::LSR | Op::ASR | Op::ROR => {
             // These instructions are actually the immediate versions, even though their encodings
             // place them in the "data-processing (register)" category
-            result.operands[0] = Operand::register(rd);
-            result.operands[1] = Operand::register(rm);
-            result.operands[2] = Operand::immediate(imm5);
+            result.operands[0] = Some(Operand::Reg(rd));
+            result.operands[1] = Some(Operand::Reg(rm));
+            result.operands[2] = Some(Operand::Imm(imm5));
         }
         Op::TEQ | Op::TST | Op::CMN | Op::CMP => {
-            result.operands[0] = Operand::register(rn);
+            result.operands[0] = Some(Operand::Reg(rn));
             result.operands[1] = Some(Operand::Reg(rm));
-            result.shift = shift;
+            result.extra = shift;
         }
         _ => {
-            result.operands[0] = Operand::register(rd);
-            result.operands[1] = Operand::register(rn);
+            result.operands[0] = Some(Operand::Reg(rd));
+            result.operands[1] = Some(Operand::Reg(rn));
             result.operands[2] = Some(Operand::Reg(rm));
-            result.shift = shift;
+            result.extra = shift;
         }
     }
     Ok(result)
@@ -227,7 +187,7 @@ fn arm_data_proc_shift_reg(instr: u32) -> DisasmResult {
     let rn = Register::try_from(bits(instr, 16..19))?;
     let rm = Register::try_from(bits(instr, 0..3))?;
     let rs = Register::try_from(bits(instr, 8..11))?;
-    let shift = Shift {
+    let shift = Some(ExtraOperand::from(RegShift {
         op: match bits(instr, 5..6) {
             0b00 => ShiftOp::LSL,
             0b01 => ShiftOp::LSR,
@@ -235,14 +195,14 @@ fn arm_data_proc_shift_reg(instr: u32) -> DisasmResult {
             0b11 => ShiftOp::ROR,
             _ => unreachable!(),
         },
-        shift_type: ShiftType::Reg(rs),
-    };
+        reg: rs,
+    }));
 
     match op {
         Op::MVN => {
-            result.operands[0] = Operand::register(rd);
-            result.operands[1] = Operand::register(rm);
-            result.shift = Some(shift);
+            result.operands[0] = Some(Operand::Reg(rd));
+            result.operands[1] = Some(Operand::Reg(rm));
+            result.extra = shift;
         }
         Op::ADR | Op::MOV | Op::RRX => {
             return Err(DisasmError::new(
@@ -254,20 +214,20 @@ fn arm_data_proc_shift_reg(instr: u32) -> DisasmResult {
         Op::LSL | Op::LSR | Op::ASR | Op::ROR => {
             // These instructions are actually the register versions, even though their encodings
             // place them in the "data-processing (register-shifted register)" category.
-            result.operands[0] = Operand::register(rd);
-            result.operands[1] = Operand::register(rm);
-            result.operands[2] = Operand::register(rs);
+            result.operands[0] = Some(Operand::Reg(rd));
+            result.operands[1] = Some(Operand::Reg(rm));
+            result.operands[2] = Some(Operand::Reg(rs));
         }
         Op::TEQ | Op::TST | Op::CMN | Op::CMP => {
-            result.operands[0] = Operand::register(rn);
-            result.operands[1] = Operand::register(rm);
-            result.shift = Some(shift)
+            result.operands[0] = Some(Operand::Reg(rn));
+            result.operands[1] = Some(Operand::Reg(rm));
+            result.extra = shift;
         }
         _ => {
-            result.operands[0] = Operand::register(rd);
-            result.operands[1] = Operand::register(rn);
-            result.operands[2] = Operand::register(rm);
-            result.shift = Some(shift)
+            result.operands[0] = Some(Operand::Reg(rd));
+            result.operands[1] = Some(Operand::Reg(rn));
+            result.operands[2] = Some(Operand::Reg(rm));
+            result.extra = shift
         }
     }
     Ok(result)
@@ -307,17 +267,17 @@ fn arm_data_proc_imm(instr: u32) -> DisasmResult {
         Op::ADR | Op::MOV | Op::MVN => {
             // TODO - ADR is a PC-relative instruction. Need to figure out it the address should be
             // passed in here or if it should it should just be resolved at runtime
-            result.operands[0] = Operand::register(rd);
-            result.operands[1] = Operand::immediate(imm);
+            result.operands[0] = Some(Operand::Reg(rd));
+            result.operands[1] = Some(Operand::Imm(imm));
         }
         Op::TEQ | Op::TST | Op::CMN | Op::CMP => {
-            result.operands[0] = Operand::register(rn);
-            result.operands[1] = Operand::immediate(imm);
+            result.operands[0] = Some(Operand::Reg(rn));
+            result.operands[1] = Some(Operand::Imm(imm));
         }
         _ => {
-            result.operands[0] = Operand::register(rd);
-            result.operands[1] = Operand::register(rn);
-            result.operands[2] = Operand::immediate(imm);
+            result.operands[0] = Some(Operand::Reg(rd));
+            result.operands[1] = Some(Operand::Reg(rn));
+            result.operands[2] = Some(Operand::Imm(imm));
         }
     }
     Ok(result)
@@ -351,7 +311,7 @@ fn arm_misc(instr: u32) -> DisasmResult {
     Ok(Instruction {
         cond,
         op,
-        operands: [Operand::register(rm), None, None, None],
+        operands: [Some(Operand::Reg(rm)), None, None, None],
         ..Default::default()
     })
 }
@@ -377,15 +337,15 @@ fn arm_mult(instr: u32) -> DisasmResult {
     let mut instr = Instruction::default();
     match op {
         Op::MUL => {
-            instr.operands[0] = Operand::register(rd);
-            instr.operands[1] = Operand::register(rn);
-            instr.operands[2] = Operand::register(rm);
+            instr.operands[0] = Some(Operand::Reg(rd));
+            instr.operands[1] = Some(Operand::Reg(rn));
+            instr.operands[2] = Some(Operand::Reg(rm));
         }
         Op::MLA | Op::UMULL | Op::SMULL | Op::SMLAL => {
-            instr.operands[0] = Operand::register(rd);
-            instr.operands[1] = Operand::register(rn);
-            instr.operands[2] = Operand::register(rm);
-            instr.operands[3] = Operand::register(ra);
+            instr.operands[0] = Some(Operand::Reg(rd));
+            instr.operands[1] = Some(Operand::Reg(rn));
+            instr.operands[2] = Some(Operand::Reg(rm));
+            instr.operands[3] = Some(Operand::Reg(ra));
         }
         _ => unreachable!(),
     }
@@ -460,22 +420,22 @@ fn arm_extra_load_store(instr: u32) -> DisasmResult {
     match op {
         Op::STRD => {
             let rt2 = Register::try_from(rt as u32 + 1)?;
-            instr.operands[0] = Operand::register(rt);
-            instr.operands[1] = Operand::register(rt2);
-            instr.operands[2] = Operand::register(rn);
+            instr.operands[0] = Some(Operand::Reg(rt));
+            instr.operands[1] = Some(Operand::Reg(rt2));
+            instr.operands[2] = Some(Operand::Reg(rn));
             instr.operands[3] = if imm {
-                Operand::immediate(imm8)
+                Some(Operand::Imm(imm8))
             } else {
-                Operand::register(rm)
+                Some(Operand::Reg(rm))
             };
         }
         _ => {
-            instr.operands[0] = Operand::register(rt);
-            instr.operands[1] = Operand::register(rn);
+            instr.operands[0] = Some(Operand::Reg(rt));
+            instr.operands[1] = Some(Operand::Reg(rn));
             instr.operands[2] = if imm {
-                Operand::immediate(imm8)
+                Some(Operand::Imm(imm8))
             } else {
-                Operand::register(rm)
+                Some(Operand::Reg(rm))
             };
         }
     }

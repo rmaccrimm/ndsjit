@@ -111,15 +111,45 @@ pub enum ShiftOp {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum ShiftType {
-    Reg(Register),
-    Imm(u32),
+pub struct ImmShift {
+    pub op: ShiftOp,
+    pub imm: u32,
+}
+
+impl ImmShift {
+    pub fn decode(shift_op: u32, imm5: u32) -> Option<Self> {
+        assert!(shift_op < 4);
+        assert!(imm5 < 32);
+        let (op, imm) = match shift_op {
+            0b00 => (ShiftOp::LSL, imm5),
+            0b01 => (ShiftOp::LSR, if imm5 == 0 { 32 } else { imm5 }),
+            0b10 => (ShiftOp::ASR, if imm5 == 0 { 32 } else { imm5 }),
+            0b11 => {
+                if imm5 == 0 {
+                    (ShiftOp::RRX, 1)
+                } else {
+                    (ShiftOp::ROR, imm5)
+                }
+            }
+            _ => unreachable!(),
+        };
+        if imm == 0 {
+            return None;
+        }
+        Some(ImmShift { op, imm })
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct Shift {
-    pub shift_type: ShiftType,
+pub struct RegShift {
     pub op: ShiftOp,
+    pub reg: Register,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum Shift {
+    Reg(RegShift),
+    Imm(ImmShift),
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -127,6 +157,18 @@ pub enum AddrMode {
     Offset,
     PreIndex,
     PostIndex,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct AddrIndex {
+    reg: Register,
+    shift: Option<ImmShift>,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum AddrOffset {
+    Index(AddrIndex),
+    Imm(i32),
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -141,6 +183,26 @@ pub enum Operand {
     Reg(Register),
     Imm(u32),
     Addr(Address),
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+/// Auxillary operands, of which there can be at most 1 per instruction. Used to indicate a shift
+/// applied to a register operand, or an offset applied to an address operand
+pub enum ExtraOperand {
+    Shift(Shift),
+    Offset(AddrOffset),
+}
+
+impl From<ImmShift> for ExtraOperand {
+    fn from(shift: ImmShift) -> Self {
+        Self::Shift(Shift::Imm(shift))
+    }
+}
+
+impl From<RegShift> for ExtraOperand {
+    fn from(shift: RegShift) -> Self {
+        Self::Shift(Shift::Reg(shift))
+    }
 }
 
 /// Helper methods for filling out operand lists
@@ -588,7 +650,7 @@ pub struct Instruction {
     pub op: Op,
     pub operands: [Option<Operand>; MAX_NUM_OPERANDS],
     // will need to move back to Operand if it's ever possible to have more than 1 per op
-    pub shift: Option<Shift>,
+    pub extra: Option<ExtraOperand>,
     pub set_flags: bool,
 }
 
@@ -598,7 +660,7 @@ impl Default for Instruction {
             cond: Cond::AL,
             op: Op::NOP,
             operands: [None; 4],
-            shift: None,
+            extra: None,
             set_flags: false,
         }
     }
@@ -625,13 +687,13 @@ impl fmt::Display for Instruction {
                 _ => todo!(),
             }
         }
-        if let Some(shift) = self.shift {
-            match shift.shift_type {
-                ShiftType::Reg(reg) => {
-                    write!(operand_str, ", {:?} {:?}", shift.op, reg)?;
+        if let Some(ExtraOperand::Shift(shift)) = self.extra {
+            match shift {
+                Shift::Reg(r) => {
+                    write!(operand_str, ", {:?} {:?}", r.op, r.reg)?;
                 }
-                ShiftType::Imm(imm) => {
-                    write!(operand_str, ", {:?} {}", shift.op, imm)?;
+                Shift::Imm(i) => {
+                    write!(operand_str, ", {:?} {}", i.op, i.imm)?;
                 }
             }
         }
