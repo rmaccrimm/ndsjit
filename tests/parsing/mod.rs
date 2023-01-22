@@ -1,4 +1,6 @@
-use ndsjit::disasm::armv4t::{Cond, Instruction, Op, Operand, Register, Shift, ShiftOp, ShiftType};
+use ndsjit::disasm::armv4t::{
+    Cond, ExtraOperand, ImmShift, Instruction, Op, Operand, RegShift, Register, Shift, ShiftOp,
+};
 use std::error::Error;
 use std::fmt::Display;
 use std::ops::Range;
@@ -73,22 +75,13 @@ fn parse_shift(input: &str) -> Result<Shift, ParseError> {
         if input.len() > 3 {
             return Err(parse_err);
         } else {
-            return Ok(Shift {
-                shift_type: ShiftType::Imm(1),
-                op,
-            });
+            return Ok(Shift::Imm(ImmShift { imm: 1, op }));
         }
     }
     let by = parse_operand(input.get(3..).ok_or(parse_err)?)?;
     match by {
-        Operand::Imm(imm) => Ok(Shift {
-            op: op,
-            shift_type: ShiftType::Imm(imm),
-        }),
-        Operand::Reg(reg) => Ok(Shift {
-            op: op,
-            shift_type: ShiftType::Reg(reg),
-        }),
+        Operand::Imm(imm) => Ok(Shift::Imm(ImmShift { op, imm })),
+        Operand::Reg(reg) => Ok(Shift::Reg(RegShift { op, reg })),
         _ => Err(ParseError::for_field("shift", input)),
     }
 }
@@ -153,10 +146,10 @@ impl FromStr for AsmLine {
         for (i, s) in rest.split(",").enumerate() {
             match parse_operand(s) {
                 Ok(operand) => {
-                    instr.operands[i] = Some(operand);
+                    instr.operands.push(operand);
                 }
                 Err(_) => {
-                    instr.shift = Some(parse_shift(s)?);
+                    instr.extra = Some(ExtraOperand::Shift(parse_shift(s)?));
                 }
             }
         }
@@ -178,7 +171,7 @@ impl FromStr for AsmLine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ndsjit::disasm::armv4t::{Op, Register::*, Shift, ShiftOp::*, ShiftType};
+    use ndsjit::disasm::armv4t::{Op, Register::*, Shift, ShiftOp::*};
 
     #[test]
     fn test_parse_operand() -> Result<(), ParseError> {
@@ -201,17 +194,9 @@ mod tests {
                 instr: Instruction {
                     cond: Cond::GE,
                     op: Op::AND,
-                    operands: [
-                        Some(Operand::Reg(SP)),
-                        Some(Operand::Reg(LR)),
-                        Some(Operand::Reg(R4)),
-                        None,
-                    ],
+                    operands: vec![Operand::Reg(SP), Operand::Reg(LR), Operand::Reg(R4)],
                     set_flags: false,
-                    shift: Some(Shift {
-                        op: LSL,
-                        shift_type: ShiftType::Reg(R6),
-                    })
+                    extra: Some(RegShift { op: LSL, reg: R6 }.into())
                 }
             }
         );
@@ -233,20 +218,8 @@ mod tests {
 
     #[test]
     fn test_parse_shift() -> Result<(), ParseError> {
-        assert_eq!(
-            parse_shift("LSL#23")?,
-            Shift {
-                op: LSL,
-                shift_type: ShiftType::Imm(23)
-            }
-        );
-        assert_eq!(
-            parse_shift("RRX")?,
-            Shift {
-                op: RRX,
-                shift_type: ShiftType::Imm(1)
-            }
-        );
+        assert_eq!(parse_shift("LSL#23")?, Shift::Imm(ImmShift { op: LSL, imm: 23 }));
+        assert_eq!(parse_shift("RRX")?, Shift::Imm(ImmShift { op: RRX, imm: 1 }));
         Ok(())
     }
 
