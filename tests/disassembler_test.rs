@@ -202,7 +202,6 @@ fn gas_assemble_input(input: String) -> String {
         .expect("failed to wait on process");
 
     let out = String::from_utf8(output.stdout).unwrap();
-    dbg!(out.clone());
 
     let err_str = String::from_utf8(output.stderr).unwrap();
     for line in err_str.lines() {
