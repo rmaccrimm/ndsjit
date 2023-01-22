@@ -74,12 +74,7 @@ mod tests {
             Instruction {
                 cond: EQ,
                 op: AND,
-                operands: [
-                    Operand::register(R12),
-                    Operand::register(PC),
-                    Operand::immediate(12),
-                    None
-                ],
+                operands: vec![Operand::Reg(R12), Operand::Reg(PC), Operand::Imm(12)],
                 ..Default::default()
             }
         );

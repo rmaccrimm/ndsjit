@@ -142,30 +142,30 @@ fn arm_data_proc_reg(instr: u32) -> DisasmResult {
             ));
         }
         Op::MVN => {
-            result.operands[0] = Some(Operand::Reg(rd));
-            result.operands[1] = Some(Operand::Reg(rm));
+            result.operands.push(Operand::Reg(rd));
+            result.operands.push(Operand::Reg(rm));
             result.extra = shift;
         }
         Op::MOV | Op::RRX => {
-            result.operands[0] = Some(Operand::Reg(rd));
-            result.operands[1] = Some(Operand::Reg(rm));
+            result.operands.push(Operand::Reg(rd));
+            result.operands.push(Operand::Reg(rm));
         }
         Op::LSL | Op::LSR | Op::ASR | Op::ROR => {
             // These instructions are actually the immediate versions, even though their encodings
             // place them in the "data-processing (register)" category
-            result.operands[0] = Some(Operand::Reg(rd));
-            result.operands[1] = Some(Operand::Reg(rm));
-            result.operands[2] = Some(Operand::Imm(imm5));
+            result.operands.push(Operand::Reg(rd));
+            result.operands.push(Operand::Reg(rm));
+            result.operands.push(Operand::Imm(imm5));
         }
         Op::TEQ | Op::TST | Op::CMN | Op::CMP => {
-            result.operands[0] = Some(Operand::Reg(rn));
-            result.operands[1] = Some(Operand::Reg(rm));
+            result.operands.push(Operand::Reg(rn));
+            result.operands.push(Operand::Reg(rm));
             result.extra = shift;
         }
         _ => {
-            result.operands[0] = Some(Operand::Reg(rd));
-            result.operands[1] = Some(Operand::Reg(rn));
-            result.operands[2] = Some(Operand::Reg(rm));
+            result.operands.push(Operand::Reg(rd));
+            result.operands.push(Operand::Reg(rn));
+            result.operands.push(Operand::Reg(rm));
             result.extra = shift;
         }
     }
@@ -200,8 +200,8 @@ fn arm_data_proc_shift_reg(instr: u32) -> DisasmResult {
 
     match op {
         Op::MVN => {
-            result.operands[0] = Some(Operand::Reg(rd));
-            result.operands[1] = Some(Operand::Reg(rm));
+            result.operands.push(Operand::Reg(rd));
+            result.operands.push(Operand::Reg(rm));
             result.extra = shift;
         }
         Op::ADR | Op::MOV | Op::RRX => {
@@ -214,19 +214,19 @@ fn arm_data_proc_shift_reg(instr: u32) -> DisasmResult {
         Op::LSL | Op::LSR | Op::ASR | Op::ROR => {
             // These instructions are actually the register versions, even though their encodings
             // place them in the "data-processing (register-shifted register)" category.
-            result.operands[0] = Some(Operand::Reg(rd));
-            result.operands[1] = Some(Operand::Reg(rm));
-            result.operands[2] = Some(Operand::Reg(rs));
+            result.operands.push(Operand::Reg(rd));
+            result.operands.push(Operand::Reg(rm));
+            result.operands.push(Operand::Reg(rs));
         }
         Op::TEQ | Op::TST | Op::CMN | Op::CMP => {
-            result.operands[0] = Some(Operand::Reg(rn));
-            result.operands[1] = Some(Operand::Reg(rm));
+            result.operands.push(Operand::Reg(rn));
+            result.operands.push(Operand::Reg(rm));
             result.extra = shift;
         }
         _ => {
-            result.operands[0] = Some(Operand::Reg(rd));
-            result.operands[1] = Some(Operand::Reg(rn));
-            result.operands[2] = Some(Operand::Reg(rm));
+            result.operands.push(Operand::Reg(rd));
+            result.operands.push(Operand::Reg(rn));
+            result.operands.push(Operand::Reg(rm));
             result.extra = shift
         }
     }
@@ -267,17 +267,17 @@ fn arm_data_proc_imm(instr: u32) -> DisasmResult {
         Op::ADR | Op::MOV | Op::MVN => {
             // TODO - ADR is a PC-relative instruction. Need to figure out it the address should be
             // passed in here or if it should it should just be resolved at runtime
-            result.operands[0] = Some(Operand::Reg(rd));
-            result.operands[1] = Some(Operand::Imm(imm));
+            result.operands.push(Operand::Reg(rd));
+            result.operands.push(Operand::Imm(imm));
         }
         Op::TEQ | Op::TST | Op::CMN | Op::CMP => {
-            result.operands[0] = Some(Operand::Reg(rn));
-            result.operands[1] = Some(Operand::Imm(imm));
+            result.operands.push(Operand::Reg(rn));
+            result.operands.push(Operand::Imm(imm));
         }
         _ => {
-            result.operands[0] = Some(Operand::Reg(rd));
-            result.operands[1] = Some(Operand::Reg(rn));
-            result.operands[2] = Some(Operand::Imm(imm));
+            result.operands.push(Operand::Reg(rd));
+            result.operands.push(Operand::Reg(rn));
+            result.operands.push(Operand::Imm(imm));
         }
     }
     Ok(result)
@@ -311,7 +311,7 @@ fn arm_misc(instr: u32) -> DisasmResult {
     Ok(Instruction {
         cond,
         op,
-        operands: [Some(Operand::Reg(rm)), None, None, None],
+        operands: vec![Operand::Reg(rm)],
         ..Default::default()
     })
 }
@@ -337,15 +337,15 @@ fn arm_mult(instr: u32) -> DisasmResult {
     let mut instr = Instruction::default();
     match op {
         Op::MUL => {
-            instr.operands[0] = Some(Operand::Reg(rd));
-            instr.operands[1] = Some(Operand::Reg(rn));
-            instr.operands[2] = Some(Operand::Reg(rm));
+            instr.operands.push(Operand::Reg(rd));
+            instr.operands.push(Operand::Reg(rn));
+            instr.operands.push(Operand::Reg(rm));
         }
         Op::MLA | Op::UMULL | Op::SMULL | Op::SMLAL => {
-            instr.operands[0] = Some(Operand::Reg(rd));
-            instr.operands[1] = Some(Operand::Reg(rn));
-            instr.operands[2] = Some(Operand::Reg(rm));
-            instr.operands[3] = Some(Operand::Reg(ra));
+            instr.operands.push(Operand::Reg(rd));
+            instr.operands.push(Operand::Reg(rn));
+            instr.operands.push(Operand::Reg(rm));
+            instr.operands.push(Operand::Reg(ra));
         }
         _ => unreachable!(),
     }
@@ -420,23 +420,23 @@ fn arm_extra_load_store(instr: u32) -> DisasmResult {
     match op {
         Op::STRD => {
             let rt2 = Register::try_from(rt as u32 + 1)?;
-            instr.operands[0] = Some(Operand::Reg(rt));
-            instr.operands[1] = Some(Operand::Reg(rt2));
-            instr.operands[2] = Some(Operand::Reg(rn));
-            instr.operands[3] = if imm {
-                Some(Operand::Imm(imm8))
+            instr.operands.push(Operand::Reg(rt));
+            instr.operands.push(Operand::Reg(rt2));
+            instr.operands.push(Operand::Reg(rn));
+            instr.operands.push(if imm {
+                Operand::Imm(imm8)
             } else {
-                Some(Operand::Reg(rm))
-            };
+                Operand::Reg(rm)
+            });
         }
         _ => {
-            instr.operands[0] = Some(Operand::Reg(rt));
-            instr.operands[1] = Some(Operand::Reg(rn));
-            instr.operands[2] = if imm {
-                Some(Operand::Imm(imm8))
+            instr.operands.push(Operand::Reg(rt));
+            instr.operands.push(Operand::Reg(rn));
+            instr.operands.push(if imm {
+                Operand::Imm(imm8)
             } else {
-                Some(Operand::Reg(rm))
-            };
+                Operand::Reg(rm)
+            });
         }
     }
 

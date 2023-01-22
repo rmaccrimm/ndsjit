@@ -2,8 +2,6 @@ use super::DisasmError;
 use std::convert::TryFrom;
 use std::fmt;
 use std::fmt::Write;
-use std::str::FromStr;
-use std::string::ParseError;
 use strum::{Display, EnumString};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, EnumString)]
@@ -644,11 +642,11 @@ pub enum Op {
 
 const MAX_NUM_OPERANDS: usize = 4;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Instruction {
     pub cond: Cond,
     pub op: Op,
-    pub operands: [Option<Operand>; MAX_NUM_OPERANDS],
+    pub operands: Vec<Operand>,
     // will need to move back to Operand if it's ever possible to have more than 1 per op
     pub extra: Option<ExtraOperand>,
     pub set_flags: bool,
@@ -659,7 +657,7 @@ impl Default for Instruction {
         Self {
             cond: Cond::AL,
             op: Op::NOP,
-            operands: [None; 4],
+            operands: Vec::new(),
             extra: None,
             set_flags: false,
         }
@@ -670,18 +668,15 @@ impl fmt::Display for Instruction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = if self.set_flags { "S" } else { "" };
         let mut operand_str = String::new();
-        for i in 0..MAX_NUM_OPERANDS {
-            match self.operands[i] {
-                None => {
-                    break;
-                }
-                Some(Operand::Reg(reg)) => {
+        for (i, operand) in self.operands.iter().enumerate() {
+            match operand {
+                Operand::Reg(reg) => {
                     if i != 0 {
                         operand_str.push_str(", ");
                     }
                     write!(operand_str, "{:?}", reg)?;
                 }
-                Some(Operand::Imm(imm)) => {
+                Operand::Imm(imm) => {
                     write!(operand_str, ", #{}", imm)?;
                 }
                 _ => todo!(),
@@ -710,7 +705,6 @@ impl fmt::Display for Instruction {
 
 #[cfg(test)]
 mod tests {
-    use std::mem::size_of;
     use std::str::FromStr;
 
     use super::{
@@ -726,12 +720,7 @@ mod tests {
         let instr = Instruction {
             cond: EQ,
             op: AND,
-            operands: [
-                Operand::register(R12),
-                Operand::register(PC),
-                Operand::immediate(12),
-                None,
-            ],
+            operands: vec![Operand::Reg(R12), Operand::Reg(PC), Operand::Imm(12)],
             ..Default::default()
         };
         assert_eq!(instr.to_string(), "ANDEQ R12, PC, #12");
