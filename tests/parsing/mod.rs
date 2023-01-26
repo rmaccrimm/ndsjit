@@ -1,9 +1,12 @@
 use ndsjit::disasm::armv4t::{
-    Cond, ExtraOperand, ImmShift, Instruction, Op, Operand, RegShift, Register, Shift, ShiftOp,
+    AddrIndex, AddrMode, AddrOffset, Address, Cond, ExtraOperand, ImmShift, Instruction, Op,
+    Operand, RegShift, Register, Shift, ShiftOp,
 };
+use ndsjit::disasm::DisasmError;
 use std::error::Error;
 use std::fmt::Display;
-use std::ops::Range;
+use std::ops::{Bound, Range, RangeBounds};
+use std::slice::SliceIndex;
 use std::str::FromStr;
 
 #[derive(PartialEq, Eq, Debug)]
@@ -22,10 +25,7 @@ pub enum ParseError {
 
 impl ParseError {
     fn for_field(f: &str, v: &str) -> Self {
-        Self::FieldError {
-            field: String::from(f),
-            value: String::from(v),
-        }
+        Self::FieldError { field: String::from(f), value: String::from(v) }
     }
 }
 
@@ -45,13 +45,15 @@ fn parse_hex(name: &str, val: &str) -> Result<u32, ParseError> {
     u32::from_str_radix(val, 16).map_err(|_| ParseError::for_field(name, val))
 }
 
-fn parse_str_range<T: FromStr>(name: &str, val: &str, i: Range<usize>) -> Result<T, ParseError> {
-    let res = val
-        .get(i)
-        .map(|s| s.parse().ok())
+fn parse_str_range<T, S>(name: &str, val: &str, range: S) -> Result<T, ParseError>
+where
+    T: FromStr,
+    S: SliceIndex<str, Output = str>,
+{
+    val.get(range)
+        .map(|s| s.trim().parse().ok())
         .flatten()
-        .ok_or(ParseError::for_field(name, val));
-    res
+        .ok_or(ParseError::for_field(name, val))
 }
 
 fn parse_operand(input: &str) -> Result<Operand, ParseError> {
@@ -69,6 +71,7 @@ fn parse_operand(input: &str) -> Result<Operand, ParseError> {
 }
 
 fn parse_shift(input: &str) -> Result<Shift, ParseError> {
+    let input = input.trim();
     let parse_err = ParseError::for_field("shift", input);
     let op: ShiftOp = parse_str_range("shift", input, 0..3)?;
     if let ShiftOp::RRX = op {
@@ -117,6 +120,85 @@ fn parse_mnemonic(input: &str) -> Result<(Op, Cond, bool), ParseError> {
     // MLS - test this, MRS,
 }
 
+fn parse_address(input: &str) -> Result<(Address, Option<AddrOffset>), ParseError> {
+    let input = input.trim();
+    let err = ParseError::for_field("address", input);
+    if !input.starts_with("[") {
+        return Err(err.clone());
+    }
+
+    let interior: String = input[1..].chars().take_while(|c| *c != ']').collect();
+    // + 2 because of []
+    let rest = &input[2 + interior.len()..];
+
+    let mut split = interior.split(',');
+
+    let base: Register = parse_str_range("base", split.next().ok_or(err.clone())?, ..)?;
+    let mut offset = if let Some(s) = split.next() {
+        match parse_operand(s)? {
+            Operand::Reg(reg) => {
+                let shift = match split.next() {
+                    Some(s) => match parse_shift(s)? {
+                        Shift::Imm(imm) => Some(imm),
+                        _ => {
+                            return Err(ParseError::for_field("offset shift", s));
+                        }
+                    },
+                    None => None,
+                };
+
+                Some(AddrOffset::Index(AddrIndex { reg, shift }))
+            }
+            Operand::Imm(imm) => Some(AddrOffset::Imm(imm as i32)),
+            _ => {
+                return Err(ParseError::for_field("offset", s));
+            }
+        }
+    } else {
+        None
+    };
+    // Should have used up all of the text between []
+    if split.next().is_some() {
+        return Err(err.clone());
+    }
+
+    let mode = match rest.trim() {
+        "" => AddrMode::Offset,
+        "!" => AddrMode::PreIndex,
+        s => {
+            if offset.is_some() || !s.starts_with(",") {
+                return Err(err.clone());
+            }
+            // Left with either , Rs, SHFT #IMM or , #IMM
+            let mut split = s[1..].split(",");
+            match parse_operand(split.next().ok_or(err.clone())?)? {
+                Operand::Imm(imm) => {
+                    offset = Some(AddrOffset::Imm(imm as i32));
+                    AddrMode::PostIndex
+                }
+                Operand::Reg(reg) => {
+                    let shift = match split.next() {
+                        Some(s) => match parse_shift(s)? {
+                            Shift::Imm(imm) => Some(imm),
+                            _ => {
+                                return Err(ParseError::for_field("offset shift", s));
+                            }
+                        },
+                        None => None,
+                    };
+                    offset = Some(AddrOffset::Index(AddrIndex { reg, shift }));
+                    AddrMode::PostIndex
+                }
+                _ => {
+                    return Err(err.clone());
+                }
+            }
+        }
+    };
+
+    Ok((Address { base, mode }, offset))
+}
+
 /// Parse a line of output from gnu-as
 impl FromStr for AsmLine {
     type Err = ParseError;
@@ -135,12 +217,7 @@ impl FromStr for AsmLine {
         let encoding = parse_hex("encoding", next_split()?)?;
         let (op, cond, s) = parse_mnemonic(next_split()?)?;
 
-        let mut instr = Instruction {
-            cond,
-            op,
-            set_flags: s,
-            ..Default::default()
-        };
+        let mut instr = Instruction { cond, op, set_flags: s, ..Default::default() };
 
         let rest = split.collect::<Vec<&str>>().join(" ");
         for (i, s) in rest.split(",").enumerate() {
@@ -159,19 +236,16 @@ impl FromStr for AsmLine {
             instr.set_flags = true;
         }
 
-        Ok(AsmLine {
-            line_no: ind,
-            addr,
-            encoding,
-            instr,
-        })
+        Ok(AsmLine { line_no: ind, addr, encoding, instr })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ndsjit::disasm::armv4t::{Op, Register::*, Shift, ShiftOp::*};
+    use ndsjit::disasm::armv4t::{
+        AddrIndex, AddrMode::*, AddrOffset, Address, Op, Register::*, Shift, ShiftOp::*,
+    };
 
     #[test]
     fn test_parse_operand() -> Result<(), ParseError> {
@@ -229,5 +303,75 @@ mod tests {
         assert_eq!(parse_mnemonic("MLSLS").unwrap(), (Op::MLS, Cond::LS, false));
         assert_eq!(parse_mnemonic("MLSLSS").unwrap(), (Op::MLS, Cond::LS, true));
         assert_eq!(parse_mnemonic("MLSS").unwrap(), (Op::MLS, Cond::AL, true));
+    }
+
+    #[test]
+    fn test_parse_address() {
+        let res = assert_eq!(
+            parse_address("[r9, r1]!").unwrap(),
+            (Address { base: R9, mode: PreIndex }, Some(AddrIndex { reg: R1, shift: None }.into()))
+        );
+
+        assert_eq!(
+            parse_address("[ r0, r12 ]").unwrap(),
+            (Address { base: R0, mode: Offset }, Some(AddrIndex { reg: R12, shift: None }.into()))
+        );
+        assert_eq!(
+            parse_address("[ r8, #101 ]!").unwrap(),
+            (Address { base: R8, mode: PreIndex }, Some(AddrOffset::Imm(101)))
+        );
+        assert_eq!(
+            parse_address("[ r8, #93 ]").unwrap(),
+            (Address { base: R8, mode: Offset }, Some(AddrOffset::Imm(93)))
+        );
+        assert_eq!(
+            parse_address("[ r9 ], r5 ").unwrap(),
+            (
+                Address { base: R9, mode: PostIndex },
+                Some(AddrIndex { reg: R5, shift: None }.into())
+            )
+        );
+        assert_eq!(
+            parse_address("[ r0 ], #123 ").unwrap(),
+            (Address { base: R0, mode: PostIndex }, Some(AddrOffset::Imm(123)))
+        );
+        assert_eq!(parse_address("[ r1 ]").unwrap(), (Address { base: R1, mode: Offset }, None));
+        assert_eq!(
+            parse_address("[ r1, r2, LSL #12 ]").unwrap(),
+            (
+                Address { base: R1, mode: Offset },
+                Some(AddrIndex { reg: R2, shift: Some(ImmShift { op: LSL, imm: 12 }) }.into())
+            )
+        );
+        assert_eq!(
+            parse_address("[ r12, sp, ROR #31 ]!").unwrap(),
+            (
+                Address { base: R12, mode: PreIndex },
+                Some(AddrIndex { reg: SP, shift: Some(ImmShift { op: ROR, imm: 31 }) }.into()),
+            )
+        );
+        assert_eq!(
+            parse_address("[r12], #702").unwrap(),
+            (Address { base: R12, mode: PostIndex }, Some(AddrOffset::Imm(702)),)
+        );
+        assert_eq!(
+            parse_address("[r12], R3, ASR #2").unwrap(),
+            (
+                Address { base: R12, mode: PostIndex },
+                Some(AddrIndex { reg: R3, shift: Some(ImmShift { op: ASR, imm: 2 }) }.into())
+            )
+        );
+        assert_eq!(
+            parse_address("[r2], LR").unwrap(),
+            (
+                Address { base: R2, mode: PostIndex },
+                Some(AddrIndex { reg: LR, shift: None }.into())
+            )
+        );
+    }
+
+    #[test]
+    fn test_split_behaviour() {
+        dbg!("abc".split(',').next().unwrap());
     }
 }
