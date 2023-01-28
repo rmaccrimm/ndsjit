@@ -11,62 +11,54 @@ use nom::{
         u32 as match_u32,
     },
     combinator::{map, map_res, opt},
-    error::{context, convert_error, ErrorKind, ParseError},
+    error::{context, convert_error, Error, ErrorKind, ParseError, VerboseError},
     Err, IResult, Needed,
 };
 // use strum::ParseError;
 
-fn op<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, Op, E> {
-    map_res(alpha1, |i| Op::from_str(i))(input)
+/// Attempt to parse an opcode, starting with the longest possible (8 chars) and moving to the
+/// shortest (1 char)
+fn op(input: &str) -> IResult<&str, Op, VerboseError<&str>> {
+    context(
+        "op",
+        alt((
+            map_res(take(8usize), Op::from_str),
+            map_res(take(7usize), Op::from_str),
+            map_res(take(6usize), Op::from_str),
+            map_res(take(5usize), Op::from_str),
+            map_res(take(4usize), Op::from_str),
+            map_res(take(3usize), Op::from_str),
+            map_res(take(2usize), Op::from_str),
+            map_res(take(1usize), Op::from_str),
+        )),
+    )(input)
 }
 
-fn cond(input: &str) -> IResult<&str, Cond> {
+fn cond(input: &str) -> IResult<&str, Cond, VerboseError<&str>> {
     map_res(take(2usize), Cond::from_str)(input)
 }
 
-fn register(input: &str) -> IResult<&str, Register> {
+fn register(input: &str) -> IResult<&str, Register, VerboseError<&str>> {
     map_res(alphanumeric1, Register::from_str)(input)
 }
 
-fn imm_val(i: &str) -> IResult<&str, u32> {
+fn imm_val(i: &str) -> IResult<&str, u32, VerboseError<&str>> {
     let (i, _) = match_char('#')(i)?;
     let (i, val) = match_u32(i)?;
     Ok((i, val))
 }
 
-fn mnemonic(input: &str) -> IResult<&str, (Op, Cond, bool)> {
-    if input.len() < 1 {
-        return Err(Err::Incomplete(Needed::new(1)));
-    }
-    // Try to parse an op repeatedly, starting with full input and decreasing in length
-    let mut i = input.len();
-    let (rest, op) = loop {
-        let result = context("op", op)(&input[0..i]);
-        match result {
-            Ok((_, op)) => {
-                break Ok((&input[i..], op));
-            }
-            Err(_) => {
-                if i == 0 {
-                    break result;
-                }
-            }
-        }
-        i -= 1;
-    }?;
-    let (rest, cond) = opt(cond)(rest).unwrap();
-    let cond = cond.unwrap_or(Cond::AL);
-
-    let parse_s = one_of::<_, _, (&str, ErrorKind)>("sS");
-    let (rest, s) = opt(parse_s)(rest).unwrap();
-
-    Ok((rest, (op, cond, s.is_some())))
+fn mnemonic(i: &str) -> IResult<&str, (Op, Cond, bool), VerboseError<&str>> {
+    let (i, op) = op(i)?;
+    let (i, cond) = opt(cond)(i)?;
+    let (i, s) = opt(one_of("sS"))(i)?;
+    Ok((i, (op, cond.unwrap_or(Cond::AL), s.is_some())))
 }
 
 /// Parses an immediate shift, starting from the comma following an index register
 /// e.g. [r0, r1, lsl #123]!
 ///             ^--------^ parses this span
-fn imm_shift(i: &str) -> IResult<&str, ImmShift> {
+fn imm_shift(i: &str) -> IResult<&str, ImmShift, VerboseError<&str>> {
     let (i, _) = match_char(',')(i)?;
     let (i, _) = multispace0(i)?;
     let (i, op) = map_res(take(3usize), ShiftOp::from_str)(i)?;
@@ -76,7 +68,7 @@ fn imm_shift(i: &str) -> IResult<&str, ImmShift> {
 }
 
 /// Parse an index register offset with optional shift
-fn index_offset(i: &str) -> IResult<&str, AddrOffset> {
+fn index_offset(i: &str) -> IResult<&str, AddrOffset, VerboseError<&str>> {
     let (i, reg) = register(i)?;
     let (i, _) = match_char(',')(i)?;
     let (i, _) = multispace0(i)?;
@@ -85,7 +77,7 @@ fn index_offset(i: &str) -> IResult<&str, AddrOffset> {
 }
 
 // Parse an immediate address offset value (signed 32-bit)
-fn imm_offset(i: &str) -> IResult<&str, AddrOffset> {
+fn imm_offset(i: &str) -> IResult<&str, AddrOffset, VerboseError<&str>> {
     let (i, imm) = imm_val(i)?;
     Ok((i, AddrOffset::Imm(imm as i32)))
 }
@@ -94,7 +86,7 @@ fn imm_offset(i: &str) -> IResult<&str, AddrOffset> {
 /// mode
 /// e.g. [r0, r1, lsl #123]!
 ///         ^ -------------^ parses this span
-fn pre_offset(i: &str) -> IResult<&str, (AddrOffset, AddrMode)> {
+fn pre_offset(i: &str) -> IResult<&str, (AddrOffset, AddrMode), VerboseError<&str>> {
     let (i, _) = match_char(',')(i)?;
     let (i, _) = multispace0(i)?;
     let (i, offset) = alt((imm_offset, index_offset))(i)?;
@@ -111,7 +103,7 @@ fn pre_offset(i: &str) -> IResult<&str, (AddrOffset, AddrMode)> {
 /// Parse a post-index offset, i.e. one appearing after the square brackets
 /// e.g. [r0], r1, ROR #32
 ///         ^------------^ parses this span
-fn post_offset(i: &str) -> IResult<&str, (AddrOffset, AddrMode)> {
+fn post_offset(i: &str) -> IResult<&str, (AddrOffset, AddrMode), VerboseError<&str>> {
     let (i, _) = match_char(']')(i)?;
     let (i, _) = multispace0(i)?;
     let (i, _) = match_char(',')(i)?;
@@ -120,7 +112,7 @@ fn post_offset(i: &str) -> IResult<&str, (AddrOffset, AddrMode)> {
     Ok((i, (offset, AddrMode::PostIndex)))
 }
 
-fn address(input: &str) -> IResult<&str, (Address, Option<AddrOffset>)> {
+fn address(input: &str) -> IResult<&str, (Address, Option<AddrOffset>), VerboseError<&str>> {
     let (i, _) = tag("[")(input)?;
     let (i, _) = multispace0(i)?;
     let (i, base) = register(i)?;
@@ -139,21 +131,20 @@ fn address(input: &str) -> IResult<&str, (Address, Option<AddrOffset>)> {
 
 #[cfg(test)]
 mod tests {
-    use nom::error::VerboseError;
-
     use super::*;
+
+    #[test]
+    fn test_parse_op() {
+        assert_eq!(op("VQRDMULH.."), Ok(("..", Op::VQRDMULH)));
+        assert_eq!(op("B.."), Ok(("..", Op::B)));
+        assert_eq!(op("BX.."), Ok(("..", Op::BX)));
+    }
 
     #[test]
     fn test_parse_mnemonic() {
         assert_eq!(mnemonic("MLSOTHERTEXT"), Ok(("OTHERTEXT", (Op::MLS, Cond::AL, false))));
         assert_eq!(mnemonic("MLSLSREST"), Ok(("REST", (Op::MLS, Cond::LS, false))));
         assert_eq!(mnemonic("MLSLSS ..."), Ok((" ...", (Op::MLS, Cond::LS, true))));
-        let res = mnemonic("QSDFIE ...");
-        // let e = json::<VerboseError<&str>>(res).finish().err().unwrap();
-        println!(
-            "verbose errors - `json::<VerboseError<&str>>(res)`:\n{}",
-            convert_error("QSDFIE ...", res.unwrap_err())
-        );
     }
 
     #[test]
