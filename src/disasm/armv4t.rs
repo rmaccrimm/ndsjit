@@ -1,3 +1,5 @@
+mod parsing;
+
 use super::DisasmError;
 use std::convert::TryFrom;
 use std::fmt;
@@ -115,9 +117,13 @@ pub struct ImmShift {
 }
 
 impl ImmShift {
-    pub fn decode(shift_op: u32, imm5: u32) -> Option<Self> {
-        assert!(shift_op < 4);
-        assert!(imm5 < 32);
+    pub fn decode(shift_op: u32, imm5: u32) -> Result<ImmShift, DisasmError> {
+        if shift_op >= 4 {
+            return Err(DisasmError::new("shift op must be a 2-bit value", shift_op));
+        }
+        if imm5 >= 32 {
+            return Err(DisasmError::new("imm shift must be a 5-bit value", imm5));
+        }
         let (op, imm) = match shift_op {
             0b00 => (ShiftOp::LSL, imm5),
             0b01 => (ShiftOp::LSR, if imm5 == 0 { 32 } else { imm5 }),
@@ -131,10 +137,7 @@ impl ImmShift {
             }
             _ => unreachable!(),
         };
-        if imm == 0 {
-            return None;
-        }
-        Some(ImmShift { op, imm })
+        Ok(ImmShift { op, imm })
     }
 }
 
@@ -159,8 +162,8 @@ pub enum AddrMode {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct AddrIndex {
-    reg: Register,
-    shift: Option<ImmShift>,
+    pub reg: Register,
+    pub shift: Option<ImmShift>,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -169,11 +172,16 @@ pub enum AddrOffset {
     Imm(i32),
 }
 
+impl From<AddrIndex> for AddrOffset {
+    fn from(index: AddrIndex) -> Self {
+        Self::Index(index)
+    }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Address {
     pub base: Register,
     pub mode: AddrMode,
-    pub write_back: bool,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -203,14 +211,9 @@ impl From<RegShift> for ExtraOperand {
     }
 }
 
-/// Helper methods for filling out operand lists
-impl Operand {
-    pub fn register(reg: Register) -> Option<Self> {
-        Some(Self::Reg(reg))
-    }
-
-    pub fn immediate(imm: u32) -> Option<Self> {
-        Some(Self::Imm(imm))
+impl From<AddrIndex> for ExtraOperand {
+    fn from(index: AddrIndex) -> Self {
+        Self::Offset(AddrOffset::Index(index))
     }
 }
 
@@ -640,6 +643,56 @@ pub enum Op {
     YIELD,
 }
 
+impl Op {
+    /// Combines the Data-processing instruction tables for register, register-shifted, and
+    /// immediate instruction forms. All 3 pass op1, but the rest are dependent on the instruction
+    /// form:
+    ///     register args: op1, op2, imm
+    ///     register-shifted args: op1, op2
+    ///     immediate args: op1
+    pub fn decode_data_proc_op(
+        op1: u32,
+        op2: Option<u32>,
+        imm: Option<u32>,
+    ) -> Result<Op, DisasmError> {
+        let op = match op1 {
+            0b00000 | 0b00001 => Op::AND,
+            0b00010 | 0b00011 => Op::EOR,
+            0b00100 | 0b00101 => Op::SUB,
+            0b00110 | 0b00111 => Op::RSB,
+            0b01000 | 0b01001 => Op::ADD,
+            0b01010 | 0b01011 => Op::ADC,
+            0b01100 | 0b01101 => Op::SBC,
+            0b01110 | 0b01111 => Op::RSC,
+            0b10001 => Op::TST,
+            0b10011 => Op::TEQ,
+            0b10101 => Op::CMP,
+            0b10111 => Op::CMN,
+            0b11000 | 0b11001 => Op::ORR,
+            0b11010 | 0b11011 => match op2 {
+                None => Op::MOV,
+                Some(0b00) => match imm {
+                    Some(0) => Op::MOV,
+                    _ => Op::LSL,
+                },
+                Some(0b01) => Op::LSR,
+                Some(0b10) => Op::ASR,
+                Some(0b11) => match imm {
+                    Some(0) => Op::RRX,
+                    _ => Op::ROR,
+                },
+                _ => unreachable!(),
+            },
+            0b11100 | 0b11101 => Op::BIC,
+            0b11110 | 0b11111 => Op::MVN,
+            _ => {
+                return Err(DisasmError::new("invalid dataproc op", op1));
+            }
+        };
+        Ok(op)
+    }
+}
+
 const MAX_NUM_OPERANDS: usize = 4;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -647,7 +700,6 @@ pub struct Instruction {
     pub cond: Cond,
     pub op: Op,
     pub operands: Vec<Operand>,
-    // will need to move back to Operand if it's ever possible to have more than 1 per op
     pub extra: Option<ExtraOperand>,
     pub set_flags: bool,
 }

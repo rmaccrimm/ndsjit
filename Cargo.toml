@@ -11,3 +11,4 @@ strum = { version = "0.24", features = ["derive"] }
 rand = "0.8.5"
 rstest = "0.16.0"
 itertools = "0.10.5"
+nom = "7.1.3"
