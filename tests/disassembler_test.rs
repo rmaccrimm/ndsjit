@@ -35,6 +35,10 @@ struct AsmGenerator {
     shift_reg: bool,
     modified_imm_value: bool,
     imm_value: Option<(u32, u32)>,
+    start_addr: usize,
+    end_addr: usize,
+    no_pc: bool,
+    ual: bool,
 }
 
 impl AsmGenerator {
@@ -48,16 +52,30 @@ impl AsmGenerator {
             shift_reg: false,
             modified_imm_value: false,
             imm_value: None,
+            start_addr: 0,
+            end_addr: 0,
+            no_pc: false,
+            ual: false,
         }
     }
 
-    fn no_suffix(&mut self) -> &mut Self {
+    fn ual(&mut self) -> &mut Self {
+        self.ual = true;
+        self
+    }
+
+    fn no_s_suffix(&mut self) -> &mut Self {
         self.suffix = false;
         self
     }
 
     fn no_cond(&mut self) -> &mut Self {
         self.cond = false;
+        self
+    }
+
+    fn no_pc(&mut self) -> &mut Self {
+        self.no_pc = true;
         self
     }
 
@@ -87,6 +105,16 @@ impl AsmGenerator {
         self
     }
 
+    fn start_addr(&mut self) -> &mut Self {
+        self.start_addr = self.num_regs;
+        self
+    }
+
+    fn end_addr(&mut self) -> &mut Self {
+        self.end_addr = self.num_regs;
+        self
+    }
+
     fn generate(&self) -> String {
         let mut rng = thread_rng();
         let mut input = String::new();
@@ -95,8 +123,10 @@ impl AsmGenerator {
             panic!("Too many register combinations!");
         }
 
+        let reg_end = if self.no_pc { 15 } else { 16 };
+
         for comb in (0..self.num_regs)
-            .map(|_| &REG_OPTS)
+            .map(|_| &REG_OPTS[..reg_end])
             .multi_cartesian_product()
         {
             let mut line = String::new();
@@ -111,8 +141,30 @@ impl AsmGenerator {
             } else {
                 ""
             };
-            let regs = comb.iter().map(|s| *s).join(", ");
-            write!(line, "{op}{cond}{s} {regs}").unwrap();
+
+            if self.ual {
+                write!(line, ".syntax unified; ");
+            }
+
+            write!(line, "{op}{cond}{s}").unwrap();
+
+            for (i, reg) in comb.iter().enumerate() {
+                if self.start_addr == i {
+                    write!(line, " [").unwrap();
+                }
+                write!(line, " {reg}").unwrap();
+                if i + 1 == self.end_addr {
+                    let excl = if self.num_regs == self.end_addr {
+                        ["", "!"].choose(&mut rng).unwrap()
+                    } else {
+                        ""
+                    };
+                    write!(line, " ]{excl}").unwrap();
+                }
+                if i + 1 != self.num_regs {
+                    write!(line, ",").unwrap();
+                }
+            }
 
             if self.shift {
                 if self.shift_reg {
@@ -283,7 +335,7 @@ fn test_disasm_data_proc_imm(
 fn test_disasm_comparison_reg_shift(#[values("TST", "TEQ", "CMP", "CMN", "MVN")] op: &str) {
     disassembler_test_case(
         &AsmGenerator::new(op)
-            .no_suffix()
+            .no_s_suffix()
             .register()
             .register()
             .reg_shift()
@@ -295,7 +347,7 @@ fn test_disasm_comparison_reg_shift(#[values("TST", "TEQ", "CMP", "CMN", "MVN")]
 fn test_disasm_comparison_imm_shift(#[values("TST", "TEQ", "CMP", "CMN", "MVN")] op: &str) {
     disassembler_test_case(
         &AsmGenerator::new(op)
-            .no_suffix()
+            .no_s_suffix()
             .register()
             .register()
             .imm_shift()
@@ -307,7 +359,7 @@ fn test_disasm_comparison_imm_shift(#[values("TST", "TEQ", "CMP", "CMN", "MVN")]
 fn test_disasm_comparison_imm(#[values("TST", "TEQ", "CMP", "CMN", "MVN")] op: &str) {
     disassembler_test_case(
         &AsmGenerator::new(op)
-            .no_suffix()
+            .no_s_suffix()
             .register()
             .modified_immediate_value()
             .generate(),
@@ -375,4 +427,20 @@ fn test_disasm_BX() {
         15 0038 E12FFF1E     BX lr\n
         16 003c E12FFF1F     BX pc";
     disassemble_and_compare(&gas_output);
+}
+
+#[rstest]
+fn test_disasm_mem_access() {
+    disassembler_test_case(
+        &AsmGenerator::new("LDRH")
+            .ual()
+            .no_s_suffix()
+            .no_pc()
+            .register()
+            .start_addr()
+            .register()
+            .register()
+            .end_addr()
+            .generate(),
+    );
 }

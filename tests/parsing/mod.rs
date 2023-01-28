@@ -2,10 +2,9 @@ use ndsjit::disasm::armv4t::{
     AddrIndex, AddrMode, AddrOffset, Address, Cond, ExtraOperand, ImmShift, Instruction, Op,
     Operand, RegShift, Register, Shift, ShiftOp,
 };
-use ndsjit::disasm::DisasmError;
+
 use std::error::Error;
 use std::fmt::Display;
-use std::ops::{Bound, Range, RangeBounds};
 use std::slice::SliceIndex;
 use std::str::FromStr;
 
@@ -209,6 +208,8 @@ impl FromStr for AsmLine {
             return Err(ParseError::FormatError);
         }
 
+        let input = input.replace(".syntax unified; ", "");
+
         let mut split = input.trim().split_whitespace();
         let mut next_split = || split.next().ok_or(ParseError::FormatError);
 
@@ -229,7 +230,7 @@ impl FromStr for AsmLine {
                     instr.extra = Some(ExtraOperand::Shift(parse_shift(s)?));
                 }
             }
-        }
+        }d
 
         // These instructions always set flags and do not support the S suffix
         if [Op::TEQ, Op::TST, Op::CMN, Op::CMP].contains(&instr.op) {
