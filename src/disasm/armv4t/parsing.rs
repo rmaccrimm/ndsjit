@@ -2,24 +2,29 @@ use std::str::FromStr;
 
 use crate::disasm::armv4t::AddrIndex;
 
-use super::{AddrMode, AddrOffset, Address, Cond, ImmShift, Op, Register, ShiftOp};
+use super::{
+    AddrMode, AddrOffset, Address, Cond, ExtraOperand, ImmShift, Instruction, Op, Operand,
+    RegShift, Register, Shift, ShiftOp,
+};
 use nom::{
     branch::alt,
-    bytes::complete::{tag, take},
+    bytes::complete::take,
     character::complete::{
-        alpha1, alphanumeric1, char as match_char, i32 as match_i32, multispace0, multispace1,
-        one_of, u32 as match_u32,
+        alphanumeric1, char as match_char, i32 as match_i32, multispace0, multispace1, one_of,
+        u32 as match_u32,
     },
     combinator::{map, map_res, opt},
-    error::{context, convert_error, Error, ErrorKind, ParseError, VerboseError},
+    error::{context, VerboseError},
+    multi::separated_list1,
     sequence::tuple,
-    Err, IResult, Needed,
+    IResult,
 };
-// use strum::ParseError;
+
+type ParseResult<'a, T> = IResult<&'a str, T, VerboseError<&'a str>>;
 
 /// Attempt to parse an opcode, starting with the longest possible (8 chars) and moving to the
 /// shortest (1 char)
-fn op(input: &str) -> IResult<&str, Op, VerboseError<&str>> {
+fn op(input: &str) -> ParseResult<Op> {
     context(
         "Op",
         alt((
@@ -35,34 +40,34 @@ fn op(input: &str) -> IResult<&str, Op, VerboseError<&str>> {
     )(input)
 }
 
-fn cond(input: &str) -> IResult<&str, Cond, VerboseError<&str>> {
+fn cond(input: &str) -> ParseResult<Cond> {
     context("Cond", map_res(take(2usize), Cond::from_str))(input)
 }
 
-fn register(input: &str) -> IResult<&str, Register, VerboseError<&str>> {
+fn register(input: &str) -> ParseResult<Register> {
     context("Register", map_res(alphanumeric1, Register::from_str))(input)
 }
 
-fn shift_op(input: &str) -> IResult<&str, ShiftOp, VerboseError<&str>> {
+fn shift_op(input: &str) -> ParseResult<ShiftOp> {
     context("ShiftOp", map_res(take(3usize), ShiftOp::from_str))(input)
 }
 
-fn imm_val(i: &str) -> IResult<&str, u32, VerboseError<&str>> {
+fn imm_val(i: &str) -> ParseResult<u32> {
     let (i, (_, val)) = context("imm_val", tuple((match_char('#'), match_u32)))(i)?;
     Ok((i, val))
 }
 
-fn mnemonic(i: &str) -> IResult<&str, (Op, Cond, bool), VerboseError<&str>> {
+fn mnemonic(i: &str) -> ParseResult<(Op, Cond, bool)> {
     let (i, op) = op(i)?;
     let (i, cond) = opt(cond)(i)?;
     let (i, s) = opt(one_of("sS"))(i)?;
     Ok((i, (op, cond.unwrap_or(Cond::AL), s.is_some())))
 }
 
-/// Parses an immediate shift, starting from the comma following an index register
+/// Parses an immediate shift, starting from the comma following a base register
 /// e.g. [r0, r1, lsl #123]!
 ///             ^--------^ parses this span
-fn imm_shift(i: &str) -> IResult<&str, ImmShift, VerboseError<&str>> {
+fn imm_shift(i: &str) -> ParseResult<ImmShift> {
     let (i, _) = match_char(',')(i)?;
     let (i, _) = multispace0(i)?;
     let (i, op) = shift_op(i)?;
@@ -71,15 +76,27 @@ fn imm_shift(i: &str) -> IResult<&str, ImmShift, VerboseError<&str>> {
     Ok((i, ImmShift { op, imm }))
 }
 
+/// Parses a register shift, starting from the comma following a base register
+/// e.g. ADR r0, r1, r2, lsl r3
+///                    ^------^ parses this span
+fn reg_shift(i: &str) -> ParseResult<RegShift> {
+    let (i, _) = match_char(',')(i)?;
+    let (i, _) = multispace0(i)?;
+    let (i, op) = shift_op(i)?;
+    let (i, _) = multispace1(i)?;
+    let (i, reg) = register(i)?;
+    Ok((i, RegShift { op, reg }))
+}
+
 /// Parse an index register offset with optional shift
-fn index_offset(i: &str) -> IResult<&str, AddrOffset, VerboseError<&str>> {
+fn index_offset(i: &str) -> ParseResult<AddrOffset> {
     let (i, reg) = register(i)?;
     let (i, shift) = opt(imm_shift)(i)?;
     Ok((i, AddrIndex { reg, shift }.into()))
 }
 
 // Parse an immediate address offset value (signed 32-bit)
-fn imm_offset(i: &str) -> IResult<&str, AddrOffset, VerboseError<&str>> {
+fn imm_offset(i: &str) -> ParseResult<AddrOffset> {
     let (i, _) = match_char('#')(i)?;
     let (i, neg) = opt(match_char('-'))(i)?;
     let (i, imm) = match_i32(i)?;
@@ -91,7 +108,7 @@ fn imm_offset(i: &str) -> IResult<&str, AddrOffset, VerboseError<&str>> {
 /// mode
 /// e.g. [r0, r1, lsl #123]!
 ///         ^ -------------^ parses this span
-fn pre_offset(i: &str) -> IResult<&str, (AddrOffset, AddrMode), VerboseError<&str>> {
+fn pre_offset(i: &str) -> ParseResult<(AddrOffset, AddrMode)> {
     let (i, _) = match_char(',')(i)?;
     let (i, _) = multispace0(i)?;
     let (i, offset) = alt((imm_offset, index_offset))(i)?;
@@ -108,7 +125,7 @@ fn pre_offset(i: &str) -> IResult<&str, (AddrOffset, AddrMode), VerboseError<&st
 /// Parse a post-index offset, i.e. one appearing after the square brackets
 /// e.g. [r0], r1, ROR #32
 ///         ^------------^ parses this span
-fn post_offset(i: &str) -> IResult<&str, (AddrOffset, AddrMode), VerboseError<&str>> {
+fn post_offset(i: &str) -> ParseResult<(AddrOffset, AddrMode)> {
     let (i, _) = match_char(']')(i)?;
     let (i, _) = multispace0(i)?;
     let (i, _) = match_char(',')(i)?;
@@ -117,7 +134,7 @@ fn post_offset(i: &str) -> IResult<&str, (AddrOffset, AddrMode), VerboseError<&s
     Ok((i, (offset, AddrMode::PostIndex)))
 }
 
-fn address(input: &str) -> IResult<&str, (Address, Option<AddrOffset>), VerboseError<&str>> {
+fn address(input: &str) -> ParseResult<(Address, Option<AddrOffset>)> {
     let (i, _) = match_char('[')(input)?;
     let (i, _) = multispace0(i)?;
     let (i, base) = register(i)?;
@@ -134,10 +151,41 @@ fn address(input: &str) -> IResult<&str, (Address, Option<AddrOffset>), VerboseE
     Ok((i, (Address { base, mode }, offset)))
 }
 
+fn shifted_reg(i: &str) -> ParseResult<(Register, Option<Shift>)> {
+    let shift = alt((map(reg_shift, Shift::Reg), map(imm_shift, Shift::Imm)));
+    let (i, reg) = register(i)?;
+    let (i, shift) = opt(shift)(i)?;
+    Ok((i, (reg, shift)))
+}
+
+fn operand(i: &str) -> ParseResult<(Operand, Option<ExtraOperand>)> {
+    let reg = map(shifted_reg, |(r, s)| (Operand::Reg(r), s.map(ExtraOperand::Shift)));
+    let addr = map(address, |(a, o)| (Operand::Addr(a), o.map(ExtraOperand::Offset)));
+    let imm = map(imm_val, |i| (Operand::Imm(i), None));
+    context("Operand", alt((reg, addr, imm)))(i)
+}
+
+fn instruction(i: &str) -> ParseResult<Instruction> {
+    let (i, (op, cond, set_flags)) = mnemonic(i)?;
+    let (i, _) = multispace1(i)?;
+
+    let sep = tuple((multispace0, match_char(','), multispace0));
+
+    // NOTE - issue with parsing: currently having more than 1 extra operand is considered a valid
+    // parse. Not sure if that can be detected
+    let (i, res) = separated_list1(sep, operand)(i)?;
+    let operands = res.iter().map(|x| x.0).collect();
+    let extra = res.iter().map(|x| x.1).find(Option::is_some).flatten();
+
+    Ok((i, Instruction { op, cond, set_flags, operands, extra }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::disasm::armv4t::{AddrMode::*, Register::*, ShiftOp::*};
+    use crate::disasm::armv4t::{
+        AddrMode::*, AddrOffset::*, Cond::*, ExtraOperand, Op::*, Operand::*, Register::*, ShiftOp,
+    };
 
     #[test]
     fn test_parse_op() {
@@ -160,21 +208,21 @@ mod tests {
         assert_eq!(addr, Address { base: R0, mode: PreIndex });
         assert_eq!(
             offset.unwrap(),
-            AddrIndex { reg: R1, shift: Some(ImmShift { op: LSL, imm: 19 }) }.into()
+            AddrIndex { reg: R1, shift: Some(ImmShift { op: ShiftOp::LSL, imm: 19 }) }.into()
         );
 
         let (_, (addr, offset)) = address("[PC, LR, ROR #20]..REST").unwrap();
         assert_eq!(addr, Address { base: PC, mode: Offset });
         assert_eq!(
             offset.unwrap(),
-            AddrIndex { reg: LR, shift: Some(ImmShift { op: ROR, imm: 20 }) }.into()
+            AddrIndex { reg: LR, shift: Some(ImmShift { op: ShiftOp::ROR, imm: 20 }) }.into()
         );
 
         let (_, (addr, offset)) = address("[r12, r9, ASR #1]..REST").unwrap();
         assert_eq!(addr, Address { base: R12, mode: Offset });
         assert_eq!(
             offset.unwrap(),
-            AddrIndex { reg: R9, shift: Some(ImmShift { op: ASR, imm: 1 }) }.into()
+            AddrIndex { reg: R9, shift: Some(ImmShift { op: ShiftOp::ASR, imm: 1 }) }.into()
         );
         let (_, (addr, offset)) = address("[r12, r9]..REST").unwrap();
         assert_eq!(addr, Address { base: R12, mode: Offset });
@@ -204,11 +252,51 @@ mod tests {
         assert_eq!(addr, Address { base: R0, mode: PostIndex });
         assert_eq!(
             offset.unwrap(),
-            AddrIndex { reg: R0, shift: Some(ImmShift { op: LSR, imm: 23 }) }.into()
+            AddrIndex { reg: R0, shift: Some(ImmShift { op: ShiftOp::LSR, imm: 23 }) }.into()
         );
 
         assert!(address("[r1, r2, #123]").is_err());
         assert!(address("[r1, r0, r3]").is_err());
         assert!(address("[r1, r0, ROR r9]").is_err());
+    }
+
+    #[test]
+    fn test_parse_instr() {
+        let (_, instr) = instruction("LDRLE r0, [r1, r2, LSL #92]!").unwrap();
+        assert_eq!(
+            instr,
+            Instruction {
+                cond: LE,
+                op: LDR,
+                operands: vec![Reg(R0), Addr(Address { base: R1, mode: PreIndex },),],
+                extra: Some(ExtraOperand::Offset(Index(AddrIndex {
+                    reg: R2,
+                    shift: Some(ImmShift { op: ShiftOp::LSL, imm: 92 },),
+                },),),),
+                set_flags: false,
+            }
+        );
+        let (_, instr) = instruction("UMAALHI r0, r1, lr, sp").unwrap();
+        assert_eq!(
+            instr,
+            Instruction {
+                cond: HI,
+                op: UMAAL,
+                operands: vec![Reg(R0), Reg(R1), Reg(LR), Reg(SP)],
+                extra: None,
+                set_flags: false,
+            }
+        );
+        let (_, instr) = instruction("ADDS r1, r2, #9393").unwrap();
+        assert_eq!(
+            instr,
+            Instruction {
+                cond: AL,
+                op: ADD,
+                operands: vec![Reg(R1), Reg(R2), Operand::Imm(9393)],
+                extra: None,
+                set_flags: true,
+            }
+        )
     }
 }
