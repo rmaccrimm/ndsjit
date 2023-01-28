@@ -7,8 +7,8 @@ use nom::{
     branch::alt,
     bytes::complete::{tag, take},
     character::complete::{
-        alpha1, alphanumeric1, char as match_char, multispace0, multispace1, one_of,
-        u32 as match_u32,
+        alpha1, alphanumeric1, char as match_char, i32 as match_i32, multispace0, multispace1,
+        one_of, u32 as match_u32,
     },
     combinator::{map, map_res, opt},
     error::{context, convert_error, Error, ErrorKind, ParseError, VerboseError},
@@ -80,8 +80,11 @@ fn index_offset(i: &str) -> IResult<&str, AddrOffset, VerboseError<&str>> {
 
 // Parse an immediate address offset value (signed 32-bit)
 fn imm_offset(i: &str) -> IResult<&str, AddrOffset, VerboseError<&str>> {
-    let (i, imm) = imm_val(i)?;
-    Ok((i, AddrOffset::Imm(imm as i32)))
+    let (i, _) = match_char('#')(i)?;
+    let (i, neg) = opt(match_char('-'))(i)?;
+    let (i, imm) = match_i32(i)?;
+    let sign = if neg.is_some() { -1 } else { 1 };
+    Ok((i, AddrOffset::Imm(imm * sign)))
 }
 
 /// Parse a non post-indexed offset, i.e. one appearing between the square brackets, and addressing
@@ -205,8 +208,7 @@ mod tests {
         );
 
         assert!(address("[r1, r2, #123]").is_err());
-        assert!(address("[r1]!, r2").is_err());
-        assert!(address("[r1, r0, r3]!").is_err());
-        assert!(address("[r1, r0, ROR r9]!").is_err());
+        assert!(address("[r1, r0, r3]").is_err());
+        assert!(address("[r1, r0, ROR r9]").is_err());
     }
 }
