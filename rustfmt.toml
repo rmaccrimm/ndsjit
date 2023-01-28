@@ -2,3 +2,4 @@ max_width = 100
 reorder_imports = true
 fn_call_width = 100
 chain_width = 60
+struct_lit_width = 60
