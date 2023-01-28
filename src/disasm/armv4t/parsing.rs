@@ -113,7 +113,7 @@ fn post_offset(i: &str) -> IResult<&str, (AddrOffset, AddrMode), VerboseError<&s
 }
 
 fn address(input: &str) -> IResult<&str, (Address, Option<AddrOffset>), VerboseError<&str>> {
-    let (i, _) = tag("[")(input)?;
+    let (i, _) = match_char('[')(input)?;
     let (i, _) = multispace0(i)?;
     let (i, base) = register(i)?;
     let (i, _) = multispace0(i)?;
@@ -132,6 +132,7 @@ fn address(input: &str) -> IResult<&str, (Address, Option<AddrOffset>), VerboseE
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::disasm::armv4t::{AddrMode::*, Register::*, ShiftOp::*};
 
     #[test]
     fn test_parse_op() {
@@ -150,15 +151,57 @@ mod tests {
     #[test]
     fn test_parse_address() {
         let (rest, (addr, offset)) = address("[r0, r1, LSL #19]!..REST").unwrap();
-        let (rest, (addr, offset)) = address("[PC, LR, ROR #20]..REST").unwrap();
-        let (rest, (addr, offset)) = address("[r12, r9, ASR #1]..REST").unwrap();
-        let (rest, (addr, offset)) = address("[r12, r9]..REST").unwrap();
-        let (rest, (addr, offset)) = address("[r3, sp]!..REST").unwrap();
-        let (rest, (addr, offset)) = address("[r12, #1932]..REST").unwrap();
-        let (rest, (addr, offset)) = address("[r0, #-123]!..REST").unwrap();
-        let (rest, (addr, offset)) = address("[r0]..REST").unwrap();
-        let (rest, (addr, offset)) = address("[r0], r0..REST").unwrap();
-        let (rest, (addr, offset)) = address("[r0], r0, LSR #23..REST").unwrap();
+        assert_eq!(rest, "..REST");
+        assert_eq!(addr, Address { base: R0, mode: PreIndex });
+        assert_eq!(
+            offset.unwrap(),
+            AddrIndex { reg: R1, shift: Some(ImmShift { op: LSL, imm: 19 }) }.into()
+        );
+
+        let (_, (addr, offset)) = address("[PC, LR, ROR #20]..REST").unwrap();
+        assert_eq!(addr, Address { base: PC, mode: Offset });
+        assert_eq!(
+            offset.unwrap(),
+            AddrIndex { reg: LR, shift: Some(ImmShift { op: ROR, imm: 20 }) }.into()
+        );
+
+        let (_, (addr, offset)) = address("[r12, r9, ASR #1]..REST").unwrap();
+        assert_eq!(addr, Address { base: R12, mode: Offset });
+        assert_eq!(
+            offset.unwrap(),
+            AddrIndex { reg: R9, shift: Some(ImmShift { op: ASR, imm: 1 }) }.into()
+        );
+        let (_, (addr, offset)) = address("[r12, r9]..REST").unwrap();
+        assert_eq!(addr, Address { base: R12, mode: Offset });
+        assert_eq!(offset.unwrap(), AddrIndex { reg: R9, shift: None }.into());
+
+        let (_, (addr, offset)) = address("[r3, sp]!..REST").unwrap();
+        assert_eq!(addr, Address { base: R3, mode: PreIndex });
+        assert_eq!(offset.unwrap(), AddrIndex { reg: R3, shift: None }.into());
+
+        let (_, (addr, offset)) = address("[r12, #1932]..REST").unwrap();
+        assert_eq!(addr, Address { base: R12, mode: Offset });
+        assert_eq!(offset.unwrap(), AddrOffset::Imm(1932));
+
+        let (_, (addr, offset)) = address("[r0, #-123]!..REST").unwrap();
+        assert_eq!(addr, Address { base: R0, mode: PreIndex });
+        assert_eq!(offset.unwrap(), AddrOffset::Imm(-123));
+
+        let (_, (addr, offset)) = address("[r0]..REST").unwrap();
+        assert_eq!(addr, Address { base: R0, mode: Offset });
+        assert_eq!(offset, None);
+
+        let (_, (addr, offset)) = address("[r0], r0..REST").unwrap();
+        assert_eq!(addr, Address { base: R0, mode: PostIndex });
+        assert_eq!(offset.unwrap(), AddrIndex { reg: R0, shift: None }.into());
+
+        let (_, (addr, offset)) = address("[r0], r0, LSR #23..REST").unwrap();
+        assert_eq!(addr, Address { base: R0, mode: PostIndex });
+        assert_eq!(
+            offset.unwrap(),
+            AddrIndex { reg: R0, shift: Some(ImmShift { op: LSR, imm: 23 }) }.into()
+        );
+
         assert!(address("[r1, r2, #123]").is_err());
         assert!(address("[r1]!, r2").is_err());
         assert!(address("[r1, r0, r3]!").is_err());
