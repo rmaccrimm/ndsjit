@@ -12,6 +12,7 @@ use nom::{
     },
     combinator::{map, map_res, opt},
     error::{context, convert_error, Error, ErrorKind, ParseError, VerboseError},
+    sequence::tuple,
     Err, IResult, Needed,
 };
 // use strum::ParseError;
@@ -20,7 +21,7 @@ use nom::{
 /// shortest (1 char)
 fn op(input: &str) -> IResult<&str, Op, VerboseError<&str>> {
     context(
-        "op",
+        "Op",
         alt((
             map_res(take(8usize), Op::from_str),
             map_res(take(7usize), Op::from_str),
@@ -35,16 +36,19 @@ fn op(input: &str) -> IResult<&str, Op, VerboseError<&str>> {
 }
 
 fn cond(input: &str) -> IResult<&str, Cond, VerboseError<&str>> {
-    map_res(take(2usize), Cond::from_str)(input)
+    context("Cond", map_res(take(2usize), Cond::from_str))(input)
 }
 
 fn register(input: &str) -> IResult<&str, Register, VerboseError<&str>> {
-    map_res(alphanumeric1, Register::from_str)(input)
+    context("Register", map_res(alphanumeric1, Register::from_str))(input)
+}
+
+fn shift_op(input: &str) -> IResult<&str, ShiftOp, VerboseError<&str>> {
+    context("ShiftOp", map_res(take(3usize), ShiftOp::from_str))(input)
 }
 
 fn imm_val(i: &str) -> IResult<&str, u32, VerboseError<&str>> {
-    let (i, _) = match_char('#')(i)?;
-    let (i, val) = match_u32(i)?;
+    let (i, (_, val)) = context("imm_val", tuple((match_char('#'), match_u32)))(i)?;
     Ok((i, val))
 }
 
@@ -61,7 +65,7 @@ fn mnemonic(i: &str) -> IResult<&str, (Op, Cond, bool), VerboseError<&str>> {
 fn imm_shift(i: &str) -> IResult<&str, ImmShift, VerboseError<&str>> {
     let (i, _) = match_char(',')(i)?;
     let (i, _) = multispace0(i)?;
-    let (i, op) = map_res(take(3usize), ShiftOp::from_str)(i)?;
+    let (i, op) = shift_op(i)?;
     let (i, _) = multispace1(i)?;
     let (i, imm) = imm_val(i)?;
     Ok((i, ImmShift { op, imm }))
@@ -70,8 +74,6 @@ fn imm_shift(i: &str) -> IResult<&str, ImmShift, VerboseError<&str>> {
 /// Parse an index register offset with optional shift
 fn index_offset(i: &str) -> IResult<&str, AddrOffset, VerboseError<&str>> {
     let (i, reg) = register(i)?;
-    let (i, _) = match_char(',')(i)?;
-    let (i, _) = multispace0(i)?;
     let (i, shift) = opt(imm_shift)(i)?;
     Ok((i, AddrIndex { reg, shift }.into()))
 }
@@ -177,7 +179,7 @@ mod tests {
 
         let (_, (addr, offset)) = address("[r3, sp]!..REST").unwrap();
         assert_eq!(addr, Address { base: R3, mode: PreIndex });
-        assert_eq!(offset.unwrap(), AddrIndex { reg: R3, shift: None }.into());
+        assert_eq!(offset.unwrap(), AddrIndex { reg: SP, shift: None }.into());
 
         let (_, (addr, offset)) = address("[r12, #1932]..REST").unwrap();
         assert_eq!(addr, Address { base: R12, mode: Offset });
