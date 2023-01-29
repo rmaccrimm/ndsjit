@@ -8,7 +8,7 @@ use super::{
 };
 use nom::{
     branch::alt,
-    bytes::complete::take,
+    bytes::complete::{tag_no_case, take},
     character::complete::{
         alphanumeric1, char as match_char, i32 as match_i32, multispace0, multispace1, one_of,
         u32 as match_u32,
@@ -20,7 +20,7 @@ use nom::{
     IResult,
 };
 
-type ParseResult<'a, T> = IResult<&'a str, T, VerboseError<&'a str>>;
+pub type ParseResult<'a, T> = IResult<&'a str, T, VerboseError<&'a str>>;
 
 /// Attempt to parse an opcode, starting with the longest possible (8 chars) and moving to the
 /// shortest (1 char)
@@ -71,9 +71,17 @@ fn imm_shift(i: &str) -> ParseResult<ImmShift> {
     let (i, _) = match_char(',')(i)?;
     let (i, _) = multispace0(i)?;
     let (i, op) = shift_op(i)?;
-    let (i, _) = multispace1(i)?;
+    let (i, _) = multispace0(i)?;
     let (i, imm) = imm_val(i)?;
     Ok((i, ImmShift { op, imm }))
+}
+
+/// Isn't followed by another operand, unlike other shifts
+fn rrx_shift(i: &str) -> ParseResult<ImmShift> {
+    let (i, _) = match_char(',')(i)?;
+    let (i, _) = multispace0(i)?;
+    let (i, op) = tag_no_case("RRX")(i)?;
+    Ok((i, ImmShift { op: op.parse().unwrap(), imm: 1 }))
 }
 
 /// Parses a register shift, starting from the comma following a base register
@@ -152,7 +160,8 @@ fn address(input: &str) -> ParseResult<(Address, Option<AddrOffset>)> {
 }
 
 fn shifted_reg(i: &str) -> ParseResult<(Register, Option<Shift>)> {
-    let shift = alt((map(reg_shift, Shift::Reg), map(imm_shift, Shift::Imm)));
+    let shift =
+        alt((map(reg_shift, Shift::Reg), map(imm_shift, Shift::Imm), map(rrx_shift, Shift::Imm)));
     let (i, reg) = register(i)?;
     let (i, shift) = opt(shift)(i)?;
     Ok((i, (reg, shift)))
@@ -165,8 +174,14 @@ fn operand(i: &str) -> ParseResult<(Operand, Option<ExtraOperand>)> {
     context("Operand", alt((reg, addr, imm)))(i)
 }
 
-fn instruction(i: &str) -> ParseResult<Instruction> {
-    let (i, (op, cond, set_flags)) = mnemonic(i)?;
+/// Parses a single ARM instruction (in UAL syntax) into structured format
+pub fn instruction(i: &str) -> ParseResult<Instruction> {
+    let (i, (op, cond, mut set_flags)) = mnemonic(i)?;
+
+    if [Op::TEQ, Op::TST, Op::CMN, Op::CMP].contains(&op) {
+        set_flags = true;
+    }
+
     let (i, _) = multispace1(i)?;
 
     let sep = tuple((multispace0, match_char(','), multispace0));
@@ -297,6 +312,17 @@ mod tests {
                 extra: None,
                 set_flags: true,
             }
-        )
+        );
+        let (_, instr) = instruction("ADDS r1, r2, r3, RRX").unwrap();
+        assert_eq!(
+            instr,
+            Instruction {
+                cond: AL,
+                op: ADD,
+                operands: vec![Reg(R1), Reg(R2), Reg(R3)],
+                extra: Some(ImmShift { imm: 1, op: ShiftOp::RRX }.into()),
+                set_flags: true,
+            }
+        );
     }
 }

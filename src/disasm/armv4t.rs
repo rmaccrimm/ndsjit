@@ -1,4 +1,4 @@
-mod parsing;
+pub mod parsing;
 
 use super::DisasmError;
 use std::convert::TryFrom;
