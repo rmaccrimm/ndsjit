@@ -13,8 +13,8 @@ use nom::{
     self,
     bytes::complete::tag,
     character::complete::hex_digit1,
-    character::complete::{multispace0, multispace1},
-    combinator::map_res,
+    character::complete::{multispace0, multispace1, u32 as match_u32},
+    combinator::{map_res, opt},
     error::{convert_error, VerboseError},
 };
 
