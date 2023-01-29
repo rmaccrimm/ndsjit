@@ -24,6 +24,12 @@ impl DisasmError {
     fn undefined(instr: u32) -> Self {
         Self::new("undefined instruction", instr)
     }
+
+    /// Sometimes a function doesn't have access to the whole instruction and it needs to be set
+    /// after Error is returned
+    fn set_instr(&self, instr: u32) -> Self {
+        Self { description: self.description.clone(), instr }
+    }
 }
 
 impl Display for DisasmError {
@@ -34,9 +40,9 @@ impl Display for DisasmError {
 
 impl Error for DisasmError {}
 
-type DisasmResult = Result<Instruction, DisasmError>;
+type DisasmResult<T> = Result<T, DisasmError>;
 
-pub fn disassemble_arm(instr: u32) -> DisasmResult {
+pub fn disassemble_arm(instr: u32) -> DisasmResult<Instruction> {
     match bits(instr, 28..31) {
         0b1111 => arm_unconditional(instr),
         _ => match bits(instr, 25..27) {
@@ -55,7 +61,7 @@ pub fn disassemble_arm(instr: u32) -> DisasmResult {
     }
 }
 
-pub fn disassemble_thumb(addr: u32, instr: u16) -> DisasmResult {
+pub fn disassemble_thumb(addr: u32, instr: u16) -> DisasmResult<Instruction> {
     // TODO - there are 32-bit THUMB encodings as well? How will those be handled? Maybe it's kicked
     // back out to the binary reader which will return the extra byte? Or we just always send 2 and
     // only decode the first?
