@@ -2,7 +2,7 @@ use super::armv4t::{
     AddrIndex, AddrMode, Address, Cond, ExtraOperand, ImmShift, Instruction, Op, Operand, RegShift,
     Register, ShiftOp,
 };
-use super::bits::{bit, bit_match, bits};
+use super::bits::{bit, bit_match, bits, pick_bits};
 use super::{DisasmError, DisasmResult};
 
 /// Number of lookahead bytes in ARM mode
@@ -23,7 +23,10 @@ pub fn arm_data_proc_and_misc(instr: u32) -> DisasmResult {
             (x, y) if bit_match(x, "10xx0") && bit_match(y, "1xx0") => arm_halfword_mult(instr),
             (x, y) if bit_match(x, "0xxxx") && y == 0b1001 => arm_mult(instr),
             (x, y) if bit_match(x, "1xxxx") && y == 0b1001 => arm_sync(instr),
-            (_, y) if bit_match(y, "1xx1") => arm_extra_load_store(instr),
+            (x, y) if bit_match(y, "1xx1") => match bit(x, 2) {
+                0 => arm_extra_load_store_reg(instr),
+                _ => arm_extra_load_store_imm(instr),
+            },
             (_, _) => Err(DisasmError::undefined(instr)),
         }
     } else {
@@ -315,7 +318,7 @@ fn arm_sync(instr: u32) -> DisasmResult {
     Ok(instr)
 }
 
-fn arm_extra_load_store(instr: u32) -> DisasmResult {
+fn arm_extra_load_store_reg(instr: u32) -> DisasmResult {
     let op1 = (bit(instr, 22) << 1) | (bit(instr, 20));
     let op2 = bits(instr, 5..6);
 
@@ -361,6 +364,7 @@ fn arm_extra_load_store(instr: u32) -> DisasmResult {
     let write_back = p == 0 || w == 1;
     let mode = match (index, write_back) {
         (true, true) => AddrMode::PreIndex,
+        (true, false) => AddrMode::Offset,
         (false, true) => AddrMode::PostIndex,
         _ => {
             return Err(DisasmError::undefined(instr));
@@ -369,12 +373,17 @@ fn arm_extra_load_store(instr: u32) -> DisasmResult {
     let addr = Address { base: rn, mode };
     let offset = AddrIndex { reg: rm, shift: None };
 
-    let mut instr = Instruction::default();
-    instr.operands.push(Operand::Reg(rt));
-    instr.operands.push(Operand::Addr(addr));
-    instr.extra = Some(offset.into());
+    Ok(Instruction {
+        op,
+        cond: Cond::try_from(bits(instr, 28..31))?,
+        operands: vec![Operand::Reg(rt), Operand::Addr(addr)],
+        extra: Some(offset.into()),
+        set_flags: false,
+    })
+}
 
-    Ok(instr)
+fn arm_extra_load_store_imm(instr: u32) -> DisasmResult {
+    todo!()
 }
 
 fn arm_msr_and_hints(instr: u32) -> DisasmResult {

@@ -9,7 +9,7 @@ use bits::{bit, bits};
 use std::error::Error;
 use std::fmt::Display;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DisasmError {
     description: String,
     instr: u32,

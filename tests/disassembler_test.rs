@@ -271,8 +271,8 @@ fn disassemble_and_compare(gas_output: &str) {
         match AsmLine::from_str(line) {
             Ok(asm_line) => {
                 assert_eq!(
-                    disassemble_arm(asm_line.encoding).unwrap(),
-                    asm_line.instr,
+                    disassemble_arm(asm_line.encoding),
+                    Ok(asm_line.instr),
                     "Disassembling {line}",
                 )
             }
@@ -433,9 +433,9 @@ fn test_disasm_BX() {
 }
 
 #[rstest]
-fn test_disasm_mem_access() {
+fn test_disasm_extra_load_store_reg(#[values("LDRH", "STRH", "LDRSB", "LDRSH")] op: &str) {
     disassembler_test_case(
-        &AsmGenerator::new("LDRH")
+        &AsmGenerator::new(op)
             .ual()
             .no_s_suffix()
             .no_pc()
