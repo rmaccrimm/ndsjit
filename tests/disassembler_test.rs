@@ -26,6 +26,9 @@ const S_OPTS: [&str; 2] = ["", "S"];
 
 const SHIFT_OPS: [&str; 6] = ["LSL", "LSR", "ASR", "ROR", "RRX", ""];
 
+/// A set of options used to automatically generate assembly instructions for test cases.
+/// Instructions are generated to cover all possible combinations of register arguments, along with
+/// randomized selections for other paramters (cond, set_flags, immediate values, etc.)
 struct AsmGenerator {
     op: String,
     num_regs: usize,
@@ -89,6 +92,7 @@ impl AsmGenerator {
         self
     }
 
+    /// [min, max)
     fn immediate_value(&mut self, min: u32, max: u32) -> &mut Self {
         self.imm_value = Some((min, max));
         self
@@ -111,7 +115,10 @@ impl AsmGenerator {
     }
 
     fn end_addr(&mut self) -> &mut Self {
-        self.end_addr = Some(self.num_regs);
+        self.end_addr = match self.imm_value {
+            Some(_) => Some(self.num_regs + 1),
+            None => Some(self.num_regs),
+        };
         self
     }
 
@@ -153,12 +160,14 @@ impl AsmGenerator {
                     write!(line, " [").unwrap();
                 }
                 write!(line, " {reg}").unwrap();
+
                 if self.end_addr.is_some() && i + 1 == self.end_addr.unwrap() {
-                    let excl = if self.num_regs == self.end_addr.unwrap() {
-                        ["", "!"].choose(&mut rng).unwrap()
-                    } else {
-                        ""
-                    };
+                    let excl =
+                        if self.num_regs == self.end_addr.unwrap() && self.imm_value.is_none() {
+                            ["", "!"].choose(&mut rng).unwrap()
+                        } else {
+                            ""
+                        };
                     write!(line, " ]{excl}").unwrap();
                 }
                 if i + 1 != self.num_regs {
@@ -184,6 +193,9 @@ impl AsmGenerator {
                 let bounds = self.imm_value.unwrap();
                 let imm: u32 = rng.gen_range(bounds.0..bounds.1);
                 write!(line, ", #{imm}").unwrap();
+                if self.end_addr.is_some() && (self.end_addr.unwrap() > self.num_regs) {
+                    write!(line, " ]").unwrap();
+                }
             }
 
             writeln!(input, "{line}").unwrap();
@@ -290,106 +302,80 @@ fn disassemble_and_compare(gas_output: &str) {
 /// the instruction parsed from the assembly
 fn disassembler_test_case(input: &str) {
     let output = gas_assemble_input(input.to_string());
+
+    let mut f = std::fs::File::create("test_in.s").unwrap();
+    f.write_all(&input.as_bytes()).unwrap();
+
+    let mut f = std::fs::File::create("test_out.s").unwrap();
+    f.write_all(&output.as_bytes()).unwrap();
+
     disassemble_and_compare(&output);
 }
 
 #[rstest]
-fn test_disasm_data_proc_reg_shift(
+fn test_disasm_data_proc(
     #[values("AND", "EOR", "SUB", "RSB", "ADD", "ADC", "SBC", "RSC", "ORR", "BIC")] op: &str,
 ) {
-    disassembler_test_case(
-        &AsmGenerator::new(op)
-            .register()
-            .register()
-            .register()
-            .reg_shift()
-            .generate(),
-    );
+    let reg_shift = AsmGenerator::new(op)
+        .register()
+        .register()
+        .register()
+        .reg_shift()
+        .generate();
+    let imm_shift = AsmGenerator::new(op)
+        .register()
+        .register()
+        .register()
+        .imm_shift()
+        .generate();
+    let imm = AsmGenerator::new(op)
+        .register()
+        .register()
+        .modified_immediate_value()
+        .generate();
+
+    let input = reg_shift + &imm_shift + &imm;
+    disassembler_test_case(&input);
 }
 
 #[rstest]
-fn test_disasm_data_proc_imm_shift(
-    #[values("AND", "EOR", "SUB", "RSB", "ADD", "ADC", "SBC", "RSC", "ORR", "BIC")] op: &str,
-) {
-    disassembler_test_case(
-        &AsmGenerator::new(op)
-            .register()
-            .register()
-            .register()
-            .imm_shift()
-            .generate(),
-    );
-}
-
-#[rstest]
-fn test_disasm_data_proc_imm(
-    #[values("AND", "EOR", "SUB", "RSB", "ADD", "ADC", "SBC", "RSC", "ORR", "BIC")] op: &str,
-) {
-    disassembler_test_case(
-        &AsmGenerator::new(op)
-            .register()
-            .register()
-            .modified_immediate_value()
-            .generate(),
-    );
-}
-
-#[rstest]
-fn test_disasm_comparison_reg_shift(#[values("TST", "TEQ", "CMP", "CMN", "MVN")] op: &str) {
-    disassembler_test_case(
-        &AsmGenerator::new(op)
-            .no_s_suffix()
-            .register()
-            .register()
-            .reg_shift()
-            .generate(),
-    );
-}
-
-#[rstest]
-fn test_disasm_comparison_imm_shift(#[values("TST", "TEQ", "CMP", "CMN", "MVN")] op: &str) {
-    disassembler_test_case(
-        &AsmGenerator::new(op)
-            .no_s_suffix()
-            .register()
-            .register()
-            .imm_shift()
-            .generate(),
-    );
-}
-
-#[rstest]
-fn test_disasm_comparison_imm(#[values("TST", "TEQ", "CMP", "CMN", "MVN")] op: &str) {
-    disassembler_test_case(
-        &AsmGenerator::new(op)
-            .no_s_suffix()
-            .register()
-            .modified_immediate_value()
-            .generate(),
-    );
+fn test_disasm_comparison(#[values("TST", "TEQ", "CMP", "CMN", "MVN")] op: &str) {
+    let reg_shift = AsmGenerator::new(op)
+        .no_s_suffix()
+        .register()
+        .register()
+        .reg_shift()
+        .generate();
+    let imm_shift = AsmGenerator::new(op)
+        .no_s_suffix()
+        .register()
+        .register()
+        .imm_shift()
+        .generate();
+    let imm = AsmGenerator::new(op)
+        .no_s_suffix()
+        .register()
+        .modified_immediate_value()
+        .generate();
+    let input = reg_shift + &imm_shift + &imm;
+    disassembler_test_case(&input);
 }
 
 #[rstest]
 fn test_disasm_shift_imm(#[values("LSL", "LSR", "ASR", "ROR")] op: &str) {
-    disassembler_test_case(
-        &AsmGenerator::new(op)
-            .register()
-            .register()
-            // If imm value is 0, get MOV instead
-            .immediate_value(1, 32)
-            .generate(),
-    );
-}
-
-#[rstest]
-fn test_disasm_shift_reg(#[values("LSL", "LSR", "ASR", "ROR")] op: &str) {
-    disassembler_test_case(
-        &AsmGenerator::new(op)
-            .register()
-            .register()
-            .register()
-            .generate(),
-    );
+    let imm_shift = AsmGenerator::new(op)
+        .register()
+        .register()
+        // If imm value is 0, get MOV instead
+        .immediate_value(1, 32)
+        .generate();
+    let reg_shift = AsmGenerator::new(op)
+        .register()
+        .register()
+        .register()
+        .generate();
+    let input = imm_shift + &reg_shift;
+    disassembler_test_case(&input);
 }
 
 #[rstest]
@@ -433,17 +419,47 @@ fn test_disasm_BX() {
 }
 
 #[rstest]
-fn test_disasm_extra_load_store_reg(#[values("LDRH", "STRH", "LDRSB", "LDRSH")] op: &str) {
-    disassembler_test_case(
-        &AsmGenerator::new(op)
-            .ual()
-            .no_s_suffix()
-            .no_pc()
-            .register()
-            .start_addr()
-            .register()
-            .register()
-            .end_addr()
-            .generate(),
-    );
+fn test_disasm_extra_load_store(#[values("LDRH", "STRH", "LDRSB", "LDRSH")] op: &str) {
+    let post_index_reg = AsmGenerator::new(op)
+        .ual()
+        .no_s_suffix()
+        .no_pc()
+        .register()
+        .start_addr()
+        .register()
+        .end_addr()
+        .register()
+        .generate();
+    let pre_index_reg = AsmGenerator::new(op)
+        .ual()
+        .no_s_suffix()
+        .no_pc()
+        .register()
+        .start_addr()
+        .register()
+        .register()
+        .end_addr()
+        .generate();
+    let post_index_imm = AsmGenerator::new(op)
+        .ual()
+        .no_s_suffix()
+        .no_pc()
+        .register()
+        .start_addr()
+        .register()
+        .end_addr()
+        .immediate_value(0, 256)
+        .generate();
+    let pre_index_imm = AsmGenerator::new(op)
+        .ual()
+        .no_s_suffix()
+        .no_pc()
+        .register()
+        .start_addr()
+        .register()
+        .immediate_value(0, 256)
+        .end_addr()
+        .generate();
+    let input = post_index_reg + &pre_index_reg + &pre_index_imm + &pre_index_reg;
+    disassembler_test_case(&input);
 }

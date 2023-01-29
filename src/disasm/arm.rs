@@ -1,6 +1,6 @@
 use super::armv4t::{
-    AddrIndex, AddrMode, Address, Cond, ExtraOperand, ImmShift, Instruction, Op, Operand, RegShift,
-    Register, ShiftOp,
+    AddrIndex, AddrMode, AddrOffset, Address, Cond, ExtraOperand, ImmShift, Instruction, Op,
+    Operand, RegShift, Register, ShiftOp,
 };
 use super::bits::{bit, bit_match, bits, pick_bits};
 use super::{DisasmError, DisasmResult};
@@ -383,7 +383,67 @@ fn arm_extra_load_store_reg(instr: u32) -> DisasmResult {
 }
 
 fn arm_extra_load_store_imm(instr: u32) -> DisasmResult {
-    todo!()
+    let op1 = (bit(instr, 22) << 1) | (bit(instr, 20));
+    let op2 = bits(instr, 5..6);
+
+    let (op, imm) = match op2 {
+        0b01 => match op1 {
+            0b00 => (Op::STRH, false),
+            0b01 => (Op::LDRH, false),
+            0b10 => (Op::STRH, true),
+            0b11 => (Op::LDRH, true),
+            _ => unreachable!(),
+        },
+        0b10 => match op1 {
+            0b01 => (Op::LDRSB, false),
+            0b11 => (Op::LDRSB, true),
+            _ => {
+                return Err(DisasmError::undefined(instr));
+            }
+        },
+        0b11 => match op1 {
+            0b01 => (Op::LDRSH, false),
+            0b11 => (Op::LDRSH, true),
+            _ => {
+                return Err(DisasmError::undefined(instr));
+            }
+        },
+        _ => {
+            return Err(DisasmError::undefined(instr));
+        }
+    };
+
+    let rt = Register::try_from(bits(instr, 12..15))?;
+    let rn = Register::try_from(bits(instr, 16..19))?;
+    let imm8 = (bits(instr, 8..11) << 4) | bits(instr, 0..3);
+    let w = bit(instr, 21);
+    let p = bit(instr, 24);
+    let imm8 = (bits(instr, 8..11) << 4) | bits(instr, 0..3);
+
+    if p == 0 && w == 1 {
+        return Err(DisasmError::undefined(instr));
+    }
+
+    let index = p == 1;
+    let write_back = p == 0 || w == 1;
+    let mode = match (index, write_back) {
+        (true, true) => AddrMode::PreIndex,
+        (true, false) => AddrMode::Offset,
+        (false, true) => AddrMode::PostIndex,
+        _ => {
+            return Err(DisasmError::undefined(instr));
+        }
+    };
+    let addr = Address { base: rn, mode };
+    let offset = AddrOffset::Imm(imm8 as i32);
+
+    Ok(Instruction {
+        op,
+        cond: Cond::try_from(bits(instr, 28..31))?,
+        operands: vec![Operand::Reg(rt), Operand::Addr(addr)],
+        extra: Some(ExtraOperand::Offset(offset)),
+        set_flags: false,
+    })
 }
 
 fn arm_msr_and_hints(instr: u32) -> DisasmResult {
