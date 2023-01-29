@@ -643,56 +643,6 @@ pub enum Op {
     YIELD,
 }
 
-impl Op {
-    /// Combines the Data-processing instruction tables for register, register-shifted, and
-    /// immediate instruction forms. All 3 pass op1, but the rest are dependent on the instruction
-    /// form:
-    ///     register args: op1, op2, imm
-    ///     register-shifted args: op1, op2
-    ///     immediate args: op1
-    pub fn decode_data_proc_op(
-        op1: u32,
-        op2: Option<u32>,
-        imm: Option<u32>,
-    ) -> Result<Op, DisasmError> {
-        let op = match op1 {
-            0b00000 | 0b00001 => Op::AND,
-            0b00010 | 0b00011 => Op::EOR,
-            0b00100 | 0b00101 => Op::SUB,
-            0b00110 | 0b00111 => Op::RSB,
-            0b01000 | 0b01001 => Op::ADD,
-            0b01010 | 0b01011 => Op::ADC,
-            0b01100 | 0b01101 => Op::SBC,
-            0b01110 | 0b01111 => Op::RSC,
-            0b10001 => Op::TST,
-            0b10011 => Op::TEQ,
-            0b10101 => Op::CMP,
-            0b10111 => Op::CMN,
-            0b11000 | 0b11001 => Op::ORR,
-            0b11010 | 0b11011 => match op2 {
-                None => Op::MOV,
-                Some(0b00) => match imm {
-                    Some(0) => Op::MOV,
-                    _ => Op::LSL,
-                },
-                Some(0b01) => Op::LSR,
-                Some(0b10) => Op::ASR,
-                Some(0b11) => match imm {
-                    Some(0) => Op::RRX,
-                    _ => Op::ROR,
-                },
-                _ => unreachable!(),
-            },
-            0b11100 | 0b11101 => Op::BIC,
-            0b11110 | 0b11111 => Op::MVN,
-            _ => {
-                return Err(DisasmError::new("invalid dataproc op", op1));
-            }
-        };
-        Ok(op)
-    }
-}
-
 const MAX_NUM_OPERANDS: usize = 4;
 
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -9,7 +9,7 @@ use super::{DisasmError, DisasmResult};
 const PC_LA_ARM: u32 = 8;
 
 /// Decode instructions described in A5.2 - Data-processing and miscellaneous instructions
-pub fn arm_data_proc_and_misc(instr: u32) -> DisasmResult {
+pub fn arm_data_proc_and_misc(instr: u32) -> DisasmResult<Instruction> {
     let op = bit(instr, 25);
     let op1 = bits(instr, 20..24);
     let op2 = bits(instr, 4..7);
@@ -39,37 +39,133 @@ pub fn arm_data_proc_and_misc(instr: u32) -> DisasmResult {
     }
 }
 
-pub fn arm_unconditional(instr: u32) -> DisasmResult {
+/// Combines the Data-processing instruction tables for register, register-shifted, and
+/// immediate instruction forms. All 3 pass op1, but the rest are dependent on the instruction
+/// form:
+///     register args: op1, op2, imm
+///     register-shifted args: op1, op2
+///     immediate args: op1
+pub fn decode_data_proc_op(op1: u32, op2: Option<u32>, imm: Option<u32>) -> DisasmResult<Op> {
+    let op = match op1 {
+        0b00000 | 0b00001 => Op::AND,
+        0b00010 | 0b00011 => Op::EOR,
+        0b00100 | 0b00101 => Op::SUB,
+        0b00110 | 0b00111 => Op::RSB,
+        0b01000 | 0b01001 => Op::ADD,
+        0b01010 | 0b01011 => Op::ADC,
+        0b01100 | 0b01101 => Op::SBC,
+        0b01110 | 0b01111 => Op::RSC,
+        0b10001 => Op::TST,
+        0b10011 => Op::TEQ,
+        0b10101 => Op::CMP,
+        0b10111 => Op::CMN,
+        0b11000 | 0b11001 => Op::ORR,
+        0b11010 | 0b11011 => match op2 {
+            None => Op::MOV,
+            Some(0b00) => match imm {
+                Some(0) => Op::MOV,
+                _ => Op::LSL,
+            },
+            Some(0b01) => Op::LSR,
+            Some(0b10) => Op::ASR,
+            Some(0b11) => match imm {
+                Some(0) => Op::RRX,
+                _ => Op::ROR,
+            },
+            _ => unreachable!(),
+        },
+        0b11100 | 0b11101 => Op::BIC,
+        0b11110 | 0b11111 => Op::MVN,
+        _ => {
+            return Err(DisasmError::new("invalid dataproc op", op1));
+        }
+    };
+    Ok(op)
+}
+
+/// Decode table for extra load/store operations (encoded in the data-processing instruction space).
+/// Both op1 and op2 must be 2 bit values
+pub fn decode_extra_load_store_op(op1: u32, op2: u32) -> DisasmResult<Op> {
+    let err = Err(DisasmError::new("could not decode extra load/store op", 0));
+    let (op, imm) = match op2 {
+        0b01 => match op1 {
+            0b00 => (Op::STRH, false),
+            0b01 => (Op::LDRH, false),
+            0b10 => (Op::STRH, true),
+            0b11 => (Op::LDRH, true),
+            _ => unreachable!(),
+        },
+        0b10 => match op1 {
+            0b01 => (Op::LDRSB, false),
+            0b11 => (Op::LDRSB, true),
+            _ => {
+                return err;
+            }
+        },
+        0b11 => match op1 {
+            0b01 => (Op::LDRSH, false),
+            0b11 => (Op::LDRSH, true),
+            _ => {
+                return err;
+            }
+        },
+        _ => {
+            return err;
+        }
+    };
+    Ok(op)
+}
+
+fn decode_addressing_mode(p: u32, w: u32) -> DisasmResult<AddrMode> {
+    let err = Err(DisasmError::new("Invalid addressing mode", 0));
+    if p == 0 && w == 1 {
+        return err;
+    }
+
+    let index = p == 1;
+    let write_back = p == 0 || w == 1;
+    let mode = match (index, write_back) {
+        (true, true) => AddrMode::PreIndex,
+        (true, false) => AddrMode::Offset,
+        (false, true) => AddrMode::PostIndex,
+        _ => {
+            return err;
+        }
+    };
+    Ok(mode)
+}
+
+pub fn arm_unconditional(instr: u32) -> DisasmResult<Instruction> {
     todo!()
 }
 
-pub fn arm_load_store(instr: u32) -> DisasmResult {
+pub fn arm_load_store(instr: u32) -> DisasmResult<Instruction> {
     todo!()
 }
 
-pub fn arm_media(instr: u32) -> DisasmResult {
+pub fn arm_media(instr: u32) -> DisasmResult<Instruction> {
     todo!()
 }
 
-pub fn arm_branch(instr: u32) -> DisasmResult {
+pub fn arm_branch(instr: u32) -> DisasmResult<Instruction> {
     todo!()
 }
 
-pub fn arm_coprocessor(instr: u32) -> DisasmResult {
+pub fn arm_coprocessor(instr: u32) -> DisasmResult<Instruction> {
     todo!()
 }
 
-pub fn arm_block_data_transfer(instr: u32) -> DisasmResult {
+pub fn arm_block_data_transfer(instr: u32) -> DisasmResult<Instruction> {
     todo!()
 }
 
 /// Decode data-processing instructions with a register operand  that can optionally be shifted by a
 ///  constant amount, and shift by constant instructions
-fn arm_data_proc_reg(instr: u32) -> DisasmResult {
+fn arm_data_proc_reg(instr: u32) -> DisasmResult<Instruction> {
     let op1 = bits(instr, 20..24);
     let op2 = bits(instr, 5..6);
     let imm = bits(instr, 7..11);
-    let op = Op::decode_data_proc_op(op1, Some(op2), Some(imm))?;
+    let op = decode_data_proc_op(op1, Some(op2), Some(imm)).map_err(|e| e.set_instr(instr))?;
 
     let mut result = Instruction::default();
     result.op = op;
@@ -123,10 +219,10 @@ fn arm_data_proc_reg(instr: u32) -> DisasmResult {
 }
 
 /// Decode data-processing instructions with a register-shifted register operand
-fn arm_data_proc_shift_reg(instr: u32) -> DisasmResult {
+fn arm_data_proc_shift_reg(instr: u32) -> DisasmResult<Instruction> {
     let op1 = bits(instr, 20..24);
     let op2 = bits(instr, 5..6);
-    let op = Op::decode_data_proc_op(op1, Some(op2), None)?;
+    let op = decode_data_proc_op(op1, Some(op2), None).map_err(|e| e.set_instr(instr))?;
 
     let mut result = Instruction::default();
     result.op = op;
@@ -191,9 +287,9 @@ fn expand_imm(imm12: u32) -> u32 {
 }
 
 /// Decode data-processing instructions with an immedate data operand (excluding shift instructions)
-fn arm_data_proc_imm(instr: u32) -> DisasmResult {
+fn arm_data_proc_imm(instr: u32) -> DisasmResult<Instruction> {
     let op1 = bits(instr, 20..24);
-    let op = Op::decode_data_proc_op(op1, None, None)?;
+    let op = decode_data_proc_op(op1, None, None).map_err(|e| e.set_instr(instr))?;
 
     let mut result = Instruction::default();
     result.op = op;
@@ -232,17 +328,11 @@ fn arm_data_proc_imm(instr: u32) -> DisasmResult {
     Ok(result)
 }
 
-fn arm_misc(instr: u32) -> DisasmResult {
+fn arm_misc(instr: u32) -> DisasmResult<Instruction> {
     let op = bits(instr, 21..22);
     let op1 = bits(instr, 16..19);
     let op2 = bits(instr, 4..6);
     let b = bit(instr, 9);
-
-    let match_only = |x: u32, match_val: u32, ret_val: Op| {
-        (x == match_val)
-            .then_some(ret_val)
-            .ok_or(DisasmError::undefined(instr))
-    };
 
     let op = match (op2, b, op) {
         // Not sure yet what the special registers are. Possibly need a new enum for them?
@@ -265,7 +355,7 @@ fn arm_misc(instr: u32) -> DisasmResult {
     })
 }
 
-fn arm_mult(instr: u32) -> DisasmResult {
+fn arm_mult(instr: u32) -> DisasmResult<Instruction> {
     let op = match bits(instr, 21..23) {
         0b000 => Op::MUL,
         0b001 => Op::MLA,
@@ -301,11 +391,11 @@ fn arm_mult(instr: u32) -> DisasmResult {
     Ok(instr)
 }
 
-fn arm_halfword_mult(instr: u32) -> DisasmResult {
+fn arm_halfword_mult(instr: u32) -> DisasmResult<Instruction> {
     Err(DisasmError::new("halfword multiply instructions undefined in ARMv4T", instr))
 }
 
-fn arm_sync(instr: u32) -> DisasmResult {
+fn arm_sync(instr: u32) -> DisasmResult<Instruction> {
     let op = match bits(instr, 20..23) {
         0b0000 => Op::SWP,
         0b0100 => Op::SWPB,
@@ -318,58 +408,19 @@ fn arm_sync(instr: u32) -> DisasmResult {
     Ok(instr)
 }
 
-fn arm_extra_load_store_reg(instr: u32) -> DisasmResult {
+fn arm_extra_load_store_reg(instr: u32) -> DisasmResult<Instruction> {
     let op1 = (bit(instr, 22) << 1) | (bit(instr, 20));
     let op2 = bits(instr, 5..6);
 
-    let (op, imm) = match op2 {
-        0b01 => match op1 {
-            0b00 => (Op::STRH, false),
-            0b01 => (Op::LDRH, false),
-            0b10 => (Op::STRH, true),
-            0b11 => (Op::LDRH, true),
-            _ => unreachable!(),
-        },
-        0b10 => match op1 {
-            0b01 => (Op::LDRSB, false),
-            0b11 => (Op::LDRSB, true),
-            _ => {
-                return Err(DisasmError::undefined(instr));
-            }
-        },
-        0b11 => match op1 {
-            0b01 => (Op::LDRSH, false),
-            0b11 => (Op::LDRSH, true),
-            _ => {
-                return Err(DisasmError::undefined(instr));
-            }
-        },
-        _ => {
-            return Err(DisasmError::undefined(instr));
-        }
-    };
+    let op = decode_extra_load_store_op(op1, op2).map_err(|e| e.set_instr(instr))?;
 
     let rm = Register::try_from(bits(instr, 0..3))?;
     let rt = Register::try_from(bits(instr, 12..15))?;
     let rn = Register::try_from(bits(instr, 16..19))?;
     let w = bit(instr, 21);
     let p = bit(instr, 24);
-    let imm8 = (bits(instr, 8..11) << 4) | bits(instr, 0..3);
 
-    if p == 0 && w == 1 {
-        return Err(DisasmError::undefined(instr));
-    }
-
-    let index = p == 1;
-    let write_back = p == 0 || w == 1;
-    let mode = match (index, write_back) {
-        (true, true) => AddrMode::PreIndex,
-        (true, false) => AddrMode::Offset,
-        (false, true) => AddrMode::PostIndex,
-        _ => {
-            return Err(DisasmError::undefined(instr));
-        }
-    };
+    let mode = decode_addressing_mode(p, w).map_err(|e| e.set_instr(instr))?;
     let addr = Address { base: rn, mode };
     let offset = AddrIndex { reg: rm, shift: None };
 
@@ -382,58 +433,20 @@ fn arm_extra_load_store_reg(instr: u32) -> DisasmResult {
     })
 }
 
-fn arm_extra_load_store_imm(instr: u32) -> DisasmResult {
+fn arm_extra_load_store_imm(instr: u32) -> DisasmResult<Instruction> {
     let op1 = (bit(instr, 22) << 1) | (bit(instr, 20));
     let op2 = bits(instr, 5..6);
 
-    let (op, imm) = match op2 {
-        0b01 => match op1 {
-            0b00 => (Op::STRH, false),
-            0b01 => (Op::LDRH, false),
-            0b10 => (Op::STRH, true),
-            0b11 => (Op::LDRH, true),
-            _ => unreachable!(),
-        },
-        0b10 => match op1 {
-            0b01 => (Op::LDRSB, false),
-            0b11 => (Op::LDRSB, true),
-            _ => {
-                return Err(DisasmError::undefined(instr));
-            }
-        },
-        0b11 => match op1 {
-            0b01 => (Op::LDRSH, false),
-            0b11 => (Op::LDRSH, true),
-            _ => {
-                return Err(DisasmError::undefined(instr));
-            }
-        },
-        _ => {
-            return Err(DisasmError::undefined(instr));
-        }
-    };
+    let op = decode_extra_load_store_op(op1, op2).map_err(|e| e.set_instr(instr))?;
 
     let rt = Register::try_from(bits(instr, 12..15))?;
     let rn = Register::try_from(bits(instr, 16..19))?;
     let imm8 = (bits(instr, 8..11) << 4) | bits(instr, 0..3);
     let w = bit(instr, 21);
     let p = bit(instr, 24);
-    let imm8 = (bits(instr, 8..11) << 4) | bits(instr, 0..3);
 
-    if p == 0 && w == 1 {
-        return Err(DisasmError::undefined(instr));
-    }
+    let mode = decode_addressing_mode(p, w).map_err(|e| e.set_instr(instr))?;
 
-    let index = p == 1;
-    let write_back = p == 0 || w == 1;
-    let mode = match (index, write_back) {
-        (true, true) => AddrMode::PreIndex,
-        (true, false) => AddrMode::Offset,
-        (false, true) => AddrMode::PostIndex,
-        _ => {
-            return Err(DisasmError::undefined(instr));
-        }
-    };
     let addr = Address { base: rn, mode };
     let offset = AddrOffset::Imm(imm8 as i32);
 
@@ -446,14 +459,14 @@ fn arm_extra_load_store_imm(instr: u32) -> DisasmResult {
     })
 }
 
-fn arm_msr_and_hints(instr: u32) -> DisasmResult {
+fn arm_msr_and_hints(instr: u32) -> DisasmResult<Instruction> {
     todo!()
 }
 
-fn arm_load_halfword_imm(instr: u32) -> DisasmResult {
+fn arm_load_halfword_imm(instr: u32) -> DisasmResult<Instruction> {
     todo!()
 }
 
-fn arm_load_high_halfword_imm(instr: u32) -> DisasmResult {
+fn arm_load_high_halfword_imm(instr: u32) -> DisasmResult<Instruction> {
     todo!()
 }

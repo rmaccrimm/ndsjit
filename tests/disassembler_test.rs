@@ -390,12 +390,6 @@ fn test_disasm_instr_MOV() {
 }
 
 #[rstest]
-fn test_disasm_RRX() {
-    // Assembler complains about RRX<cond> without S flag. Probably overlaps with ROR or something?
-    // disassembler_test_case(&AsmGenerator::new("RRX").register().register().generate());
-}
-
-#[rstest]
 fn test_disasm_BX() {
     // Hard-coding this case because BX pc gives an error (but still assembles)
     let gas_output = "
