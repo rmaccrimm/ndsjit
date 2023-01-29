@@ -1,6 +1,6 @@
 use super::armv4t::{
-    AddrIndex, AddrMode, AddrOffset, Address, Cond, ExtraOperand, ImmShift, Instruction, Op,
-    Operand, RegShift, Register, Shift, ShiftOp,
+    AddrIndex, AddrMode, Address, Cond, ExtraOperand, ImmShift, Instruction, Op, Operand, RegShift,
+    Register, ShiftOp,
 };
 use super::bits::{bit, bit_match, bits};
 use super::{DisasmError, DisasmResult};

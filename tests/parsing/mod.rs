@@ -1,12 +1,10 @@
 use ndsjit::disasm::armv4t::{
     parsing::{instruction, ParseResult},
-    AddrIndex, AddrMode, AddrOffset, Address, Cond, ExtraOperand, ImmShift, Instruction, Op,
-    Operand, RegShift, Register, Shift, ShiftOp,
+    Cond, Instruction, Operand, RegShift,
 };
 
 use std::error::Error;
 use std::fmt::Display;
-use std::slice::SliceIndex;
 use std::str::FromStr;
 
 use std::convert::From;
@@ -14,12 +12,9 @@ use std::convert::From;
 use nom::{
     self,
     bytes::complete::tag,
-    character::complete::{
-        alphanumeric1, char as match_char, i32 as match_i32, multispace0, multispace1, one_of,
-        u32 as match_u32,
-    },
-    character::complete::{digit1, hex_digit1},
-    combinator::{map_res, opt},
+    character::complete::hex_digit1,
+    character::complete::{multispace0, multispace1},
+    combinator::map_res,
     error::{convert_error, VerboseError},
 };
 
@@ -97,9 +92,7 @@ impl FromStr for AsmLine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ndsjit::disasm::armv4t::{
-        AddrIndex, AddrMode::*, AddrOffset, Address, Op, Register::*, Shift, ShiftOp::*,
-    };
+    use ndsjit::disasm::armv4t::{Op, Register::*, ShiftOp::*};
 
     #[test]
     fn test_asm_line_from_str() {
