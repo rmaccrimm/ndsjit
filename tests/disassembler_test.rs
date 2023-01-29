@@ -35,8 +35,8 @@ struct AsmGenerator {
     shift_reg: bool,
     modified_imm_value: bool,
     imm_value: Option<(u32, u32)>,
-    start_addr: usize,
-    end_addr: usize,
+    start_addr: Option<usize>,
+    end_addr: Option<usize>,
     no_pc: bool,
     ual: bool,
 }
@@ -52,8 +52,8 @@ impl AsmGenerator {
             shift_reg: false,
             modified_imm_value: false,
             imm_value: None,
-            start_addr: 0,
-            end_addr: 0,
+            start_addr: None,
+            end_addr: None,
             no_pc: false,
             ual: false,
         }
@@ -106,12 +106,12 @@ impl AsmGenerator {
     }
 
     fn start_addr(&mut self) -> &mut Self {
-        self.start_addr = self.num_regs;
+        self.start_addr = Some(self.num_regs);
         self
     }
 
     fn end_addr(&mut self) -> &mut Self {
-        self.end_addr = self.num_regs;
+        self.end_addr = Some(self.num_regs);
         self
     }
 
@@ -143,18 +143,18 @@ impl AsmGenerator {
             };
 
             if self.ual {
-                write!(line, ".syntax unified; ");
+                write!(line, ".syntax unified; ").unwrap();
             }
 
             write!(line, "{op}{cond}{s}").unwrap();
 
             for (i, reg) in comb.iter().enumerate() {
-                if self.start_addr == i {
+                if self.start_addr.is_some() && self.start_addr.unwrap() == i {
                     write!(line, " [").unwrap();
                 }
                 write!(line, " {reg}").unwrap();
-                if i + 1 == self.end_addr {
-                    let excl = if self.num_regs == self.end_addr {
+                if self.end_addr.is_some() && i + 1 == self.end_addr.unwrap() {
+                    let excl = if self.num_regs == self.end_addr.unwrap() {
                         ["", "!"].choose(&mut rng).unwrap()
                     } else {
                         ""
@@ -277,7 +277,10 @@ fn disassemble_and_compare(gas_output: &str) {
                 )
             }
             Err(err) => {
-                assert_eq!(err, ParseError::FormatError, "Failed to parse line \"{line}\"");
+                if let ParseError::Failure { msg } = &err {
+                    println!("{}", msg);
+                }
+                assert_eq!(err, ParseError::NotParsed, "Failed to parse line \"{line}\"");
             }
         }
     }
