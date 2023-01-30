@@ -101,6 +101,19 @@ impl TryFrom<u32> for Register {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct Address {
+    pub base: Register,
+    pub mode: AddrMode,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum Operand {
+    Reg(Register),
+    Imm(u32),
+    Addr(Address),
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, EnumString)]
 pub enum ShiftOp {
     LSL,
@@ -148,12 +161,6 @@ pub struct RegShift {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum Shift {
-    Reg(RegShift),
-    Imm(ImmShift),
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum AddrMode {
     Offset,
     PreIndex,
@@ -161,59 +168,49 @@ pub enum AddrMode {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct AddrIndex {
+pub struct RegOffset {
     pub reg: Register,
     pub shift: Option<ImmShift>,
+    pub add: bool,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum AddrOffset {
-    Index(AddrIndex),
-    Imm(i32),
-}
-
-impl From<AddrIndex> for AddrOffset {
-    fn from(index: AddrIndex) -> Self {
-        Self::Index(index)
-    }
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct Address {
-    pub base: Register,
-    pub mode: AddrMode,
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum Operand {
-    Reg(Register),
-    Imm(u32),
-    Addr(Address),
+pub struct ImmOffset {
+    pub imm: u32,
+    pub add: bool,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 /// Auxillary operands, of which there can be at most 1 per instruction. Used to indicate a shift
 /// applied to a register operand, or an offset applied to an address operand
 pub enum ExtraOperand {
-    Shift(Shift),
-    Offset(AddrOffset),
+    RegShift(RegShift),
+    ImmShift(ImmShift),
+    RegOffset(RegOffset),
+    ImmOffset(ImmOffset),
 }
 
-impl From<ImmShift> for ExtraOperand {
-    fn from(shift: ImmShift) -> Self {
-        Self::Shift(Shift::Imm(shift))
+impl From<RegOffset> for ExtraOperand {
+    fn from(off: RegOffset) -> Self {
+        Self::RegOffset(off)
+    }
+}
+
+impl From<ImmOffset> for ExtraOperand {
+    fn from(off: ImmOffset) -> Self {
+        Self::ImmOffset(off)
     }
 }
 
 impl From<RegShift> for ExtraOperand {
-    fn from(shift: RegShift) -> Self {
-        Self::Shift(Shift::Reg(shift))
+    fn from(off: RegShift) -> Self {
+        Self::RegShift(off)
     }
 }
 
-impl From<AddrIndex> for ExtraOperand {
-    fn from(index: AddrIndex) -> Self {
-        Self::Offset(AddrOffset::Index(index))
+impl From<ImmShift> for ExtraOperand {
+    fn from(off: ImmShift) -> Self {
+        Self::ImmShift(off)
     }
 }
 
@@ -684,14 +681,15 @@ impl fmt::Display for Instruction {
                 _ => todo!(),
             }
         }
-        if let Some(ExtraOperand::Shift(shift)) = self.extra {
-            match shift {
-                Shift::Reg(r) => {
+        if let Some(extra) = self.extra {
+            match extra {
+                ExtraOperand::RegShift(r) => {
                     write!(operand_str, ", {:?} {:?}", r.op, r.reg)?;
                 }
-                Shift::Imm(i) => {
+                ExtraOperand::ImmShift(i) => {
                     write!(operand_str, ", {:?} {}", i.op, i.imm)?;
                 }
+                _ => todo!(),
             }
         }
         write!(

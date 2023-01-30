@@ -50,8 +50,7 @@ pub fn disassemble_arm(instr: u32) -> DisasmResult<Instruction> {
             0b010 => arm_load_store(instr),
             0b011 => match bit(instr, 4) {
                 0 => arm_load_store(instr),
-                1 => arm_media(instr),
-                _ => unreachable!(),
+                _ => arm_media(instr),
             },
             0b100 => arm_block_data_transfer(instr),
             0b101 => arm_branch(instr),

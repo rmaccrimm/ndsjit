@@ -1,6 +1,6 @@
 use super::armv4t::{
-    AddrIndex, AddrMode, AddrOffset, Address, Cond, ExtraOperand, ImmShift, Instruction, Op,
-    Operand, RegShift, Register, ShiftOp,
+    AddrMode, Address, Cond, ExtraOperand, ImmOffset, ImmShift, Instruction, Op, Operand,
+    RegOffset, RegShift, Register, ShiftOp,
 };
 use super::bits::{bit, bit_match, bits, pick_bits};
 use super::{DisasmError, DisasmResult};
@@ -116,6 +116,25 @@ pub fn decode_extra_load_store_op(op1: u32, op2: u32) -> DisasmResult<Op> {
     Ok(op)
 }
 
+pub fn decode_load_store_op(op1: u32) -> DisasmResult<Op> {
+    let op = match op1 {
+        0b00010 | 0b01010 => Op::STRT,
+        0b00011 | 0b01011 => Op::LDRT,
+        0b00110 | 0b01110 => Op::STRBT,
+        0b00111 | 0b01111 => Op::LDRBT,
+        _ => match pick_bits(op1, &vec![0, 2]) {
+            0b00 => Op::STR,
+            0b01 => Op::LDR,
+            0b10 => Op::STRB,
+            _ => Op::LDRB,
+        },
+        _ => {
+            return Err(DisasmError::new("Unrecognized load/store op", 0));
+        }
+    };
+    Ok(op)
+}
+
 fn decode_addressing_mode(p: u32, w: u32) -> DisasmResult<AddrMode> {
     let err = Err(DisasmError::new("Invalid addressing mode", 0));
     if p == 0 && w == 1 {
@@ -140,7 +159,57 @@ pub fn arm_unconditional(instr: u32) -> DisasmResult<Instruction> {
 }
 
 pub fn arm_load_store(instr: u32) -> DisasmResult<Instruction> {
-    todo!()
+    let op1 = bits(instr, 20..24);
+    let op = decode_load_store_op(op1)?;
+    let rn = Register::try_from(bits(instr, 16..19))?;
+    let rt = Register::try_from(bits(instr, 12..15))?;
+    // indicates register vs immediate
+    let a = bit(instr, 25);
+    // indicates add vs subtracted offset
+    let add = bit(instr, 23) == 1;
+
+    let mut instruction = Instruction {
+        op,
+        cond: Cond::try_from(bits(instr, 28..31))?,
+        operands: vec![Operand::Reg(rt)],
+        ..Default::default()
+    };
+
+    match op {
+        Op::LDRT | Op::STRT | Op::STRBT | Op::LDRBT => {
+            let sub = bit(instr, 23) == 0;
+            if a == 1 {
+                let addr = Address { base: rn, mode: AddrMode::PostIndex };
+                let rm = Register::try_from(bits(instr, 0..3))?;
+                let shift = ImmShift::decode(bits(instr, 5..6), bits(instr, 7..11))?.into();
+                let offset = RegOffset { reg: rm, shift: Some(shift), add }.into();
+                instruction.operands.push(Operand::Addr(addr));
+                instruction.extra = Some(offset);
+            } else {
+                let addr = Address { base: rn, mode: AddrMode::PostIndex };
+                // TODO - add vs sub
+                let offset = ImmOffset { imm: bits(instr, 0..12), add }.into();
+                instruction.operands.push(Operand::Addr(addr));
+                instruction.extra = Some(offset);
+            }
+        }
+        _ => {
+            let p = bit(instr, 24);
+            let w = bit(instr, 21);
+            let mode = decode_addressing_mode(p, w)?;
+            let addr = Address { base: rn, mode };
+            if a == 1 {
+                let rm = Register::try_from(bits(instr, 0..3))?;
+                let shift = ImmShift::decode(bits(instr, 5..6), bits(instr, 7..11))?.into();
+                let offset = RegOffset { reg: rm, shift: Some(shift), add }.into();
+                instruction.operands.push(Operand::Addr(addr));
+                instruction.extra = Some(offset);
+            } else {
+                instruction.extra = Some(ImmOffset { imm: bits(instr, 0..11), add }.into());
+            }
+        }
+    };
+    Ok(instruction)
 }
 
 pub fn arm_media(instr: u32) -> DisasmResult<Instruction> {
@@ -419,10 +488,11 @@ fn arm_extra_load_store_reg(instr: u32) -> DisasmResult<Instruction> {
     let rn = Register::try_from(bits(instr, 16..19))?;
     let w = bit(instr, 21);
     let p = bit(instr, 24);
+    let add = bit(instr, 23) == 1;
 
     let mode = decode_addressing_mode(p, w).map_err(|e| e.set_instr(instr))?;
     let addr = Address { base: rn, mode };
-    let offset = AddrIndex { reg: rm, shift: None };
+    let offset = RegOffset { reg: rm, shift: None, add };
 
     Ok(Instruction {
         op,
@@ -441,20 +511,21 @@ fn arm_extra_load_store_imm(instr: u32) -> DisasmResult<Instruction> {
 
     let rt = Register::try_from(bits(instr, 12..15))?;
     let rn = Register::try_from(bits(instr, 16..19))?;
-    let imm8 = (bits(instr, 8..11) << 4) | bits(instr, 0..3);
+    let imm = (bits(instr, 8..11) << 4) | bits(instr, 0..3);
     let w = bit(instr, 21);
     let p = bit(instr, 24);
+    let add = bit(instr, 23) == 1;
 
     let mode = decode_addressing_mode(p, w).map_err(|e| e.set_instr(instr))?;
 
     let addr = Address { base: rn, mode };
-    let offset = AddrOffset::Imm(imm8 as i32);
+    let offset = ImmOffset { imm, add };
 
     Ok(Instruction {
         op,
         cond: Cond::try_from(bits(instr, 28..31))?,
         operands: vec![Operand::Reg(rt), Operand::Addr(addr)],
-        extra: Some(ExtraOperand::Offset(offset)),
+        extra: Some(offset.into()),
         set_flags: false,
     })
 }

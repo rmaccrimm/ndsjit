@@ -1,17 +1,14 @@
 use std::str::FromStr;
 
-use crate::disasm::armv4t::AddrIndex;
-
 use super::{
-    AddrMode, AddrOffset, Address, Cond, ExtraOperand, ImmShift, Instruction, Op, Operand,
-    RegShift, Register, Shift, ShiftOp,
+    AddrMode, Address, Cond, ExtraOperand, ImmOffset, ImmShift, Instruction, Op, Operand,
+    RegOffset, RegShift, Register, ShiftOp,
 };
 use nom::{
     branch::alt,
     bytes::complete::{tag_no_case, take},
     character::complete::{
-        alphanumeric1, char as match_char, i32 as match_i32, multispace0, multispace1, one_of,
-        u32 as match_u32,
+        alphanumeric1, char as match_char, multispace0, multispace1, one_of, u32 as match_u32,
     },
     combinator::{map, map_res, opt},
     error::{context, VerboseError},
@@ -97,29 +94,33 @@ fn reg_shift(i: &str) -> ParseResult<RegShift> {
 }
 
 /// Parse an index register offset with optional shift
-fn index_offset(i: &str) -> ParseResult<AddrOffset> {
+fn reg_offset(i: &str) -> ParseResult<RegOffset> {
+    let (i, neg) = opt(match_char('-'))(i)?;
+    let (i, _) = multispace0(i)?;
     let (i, reg) = register(i)?;
     let (i, shift) = opt(imm_shift)(i)?;
-    Ok((i, AddrIndex { reg, shift }.into()))
+    Ok((i, RegOffset { reg, shift, add: neg.is_none() }))
 }
 
 // Parse an immediate address offset value (signed 32-bit)
-fn imm_offset(i: &str) -> ParseResult<AddrOffset> {
+fn imm_offset(i: &str) -> ParseResult<ImmOffset> {
     let (i, _) = match_char('#')(i)?;
+    let (i, _) = multispace0(i)?;
     let (i, neg) = opt(match_char('-'))(i)?;
-    let (i, imm) = match_i32(i)?;
-    let sign = if neg.is_some() { -1 } else { 1 };
-    Ok((i, AddrOffset::Imm(imm * sign)))
+    let (i, _) = multispace0(i)?;
+    let (i, imm) = match_u32(i)?;
+    Ok((i, ImmOffset { imm, add: neg.is_none() }))
 }
 
 /// Parse a non post-indexed offset, i.e. one appearing between the square brackets, and addressing
 /// mode
 /// e.g. [r0, r1, lsl #123]!
 ///         ^ -------------^ parses this span
-fn pre_offset(i: &str) -> ParseResult<(AddrOffset, AddrMode)> {
+fn pre_offset(i: &str) -> ParseResult<(ExtraOperand, AddrMode)> {
     let (i, _) = match_char(',')(i)?;
     let (i, _) = multispace0(i)?;
-    let (i, offset) = alt((imm_offset, index_offset))(i)?;
+    let (i, offset) =
+        alt((map(imm_offset, ExtraOperand::from), map(reg_offset, ExtraOperand::from)))(i)?;
     let (i, _) = multispace0(i)?;
     let (i, _) = match_char(']')(i)?;
     let (i, excl) = opt(match_char('!'))(i)?;
@@ -133,16 +134,17 @@ fn pre_offset(i: &str) -> ParseResult<(AddrOffset, AddrMode)> {
 /// Parse a post-index offset, i.e. one appearing after the square brackets
 /// e.g. [r0], r1, ROR #32
 ///         ^------------^ parses this span
-fn post_offset(i: &str) -> ParseResult<(AddrOffset, AddrMode)> {
+fn post_offset(i: &str) -> ParseResult<(ExtraOperand, AddrMode)> {
     let (i, _) = match_char(']')(i)?;
     let (i, _) = multispace0(i)?;
     let (i, _) = match_char(',')(i)?;
     let (i, _) = multispace0(i)?;
-    let (i, offset) = alt((imm_offset, index_offset))(i)?;
+    let (i, offset) =
+        alt((map(imm_offset, ExtraOperand::from), map(reg_offset, ExtraOperand::from)))(i)?;
     Ok((i, (offset, AddrMode::PostIndex)))
 }
 
-fn address(input: &str) -> ParseResult<(Address, Option<AddrOffset>)> {
+fn address(input: &str) -> ParseResult<(Address, Option<ExtraOperand>)> {
     let (i, _) = match_char('[')(input)?;
     let (i, _) = multispace0(i)?;
     let (i, base) = register(i)?;
@@ -159,17 +161,20 @@ fn address(input: &str) -> ParseResult<(Address, Option<AddrOffset>)> {
     Ok((i, (Address { base, mode }, offset)))
 }
 
-fn shifted_reg(i: &str) -> ParseResult<(Register, Option<Shift>)> {
-    let shift =
-        alt((map(reg_shift, Shift::Reg), map(imm_shift, Shift::Imm), map(rrx_shift, Shift::Imm)));
+fn shifted_reg(i: &str) -> ParseResult<(Register, Option<ExtraOperand>)> {
+    let shift = alt((
+        map(reg_shift, ExtraOperand::from),
+        map(imm_shift, ExtraOperand::from),
+        map(rrx_shift, ExtraOperand::from),
+    ));
     let (i, reg) = register(i)?;
     let (i, shift) = opt(shift)(i)?;
     Ok((i, (reg, shift)))
 }
 
 fn operand(i: &str) -> ParseResult<(Operand, Option<ExtraOperand>)> {
-    let reg = map(shifted_reg, |(r, s)| (Operand::Reg(r), s.map(ExtraOperand::Shift)));
-    let addr = map(address, |(a, o)| (Operand::Addr(a), o.map(ExtraOperand::Offset)));
+    let reg = map(shifted_reg, |(r, s)| (Operand::Reg(r), s.map(ExtraOperand::from)));
+    let addr = map(address, |(a, o)| (Operand::Addr(a), o.map(ExtraOperand::from)));
     let imm = map(imm_val, |i| (Operand::Imm(i), None));
     context("Operand", alt((reg, addr, imm)))(i)
 }
@@ -198,9 +203,7 @@ pub fn instruction(i: &str) -> ParseResult<Instruction> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::disasm::armv4t::{
-        AddrMode::*, AddrOffset::*, Cond::*, ExtraOperand, Op::*, Operand::*, Register::*, ShiftOp,
-    };
+    use crate::disasm::armv4t::{AddrMode::*, Cond::*, Op::*, Operand::*, Register::*, ShiftOp};
 
     #[test]
     fn test_parse_op() {
@@ -223,37 +226,52 @@ mod tests {
         assert_eq!(addr, Address { base: R0, mode: PreIndex });
         assert_eq!(
             offset.unwrap(),
-            AddrIndex { reg: R1, shift: Some(ImmShift { op: ShiftOp::LSL, imm: 19 }) }.into()
+            RegOffset {
+                reg: R1,
+                add: true,
+                shift: Some(ImmShift { op: ShiftOp::LSL, imm: 19 })
+            }
+            .into()
         );
 
         let (_, (addr, offset)) = address("[PC, LR, ROR #20]..REST").unwrap();
         assert_eq!(addr, Address { base: PC, mode: Offset });
         assert_eq!(
             offset.unwrap(),
-            AddrIndex { reg: LR, shift: Some(ImmShift { op: ShiftOp::ROR, imm: 20 }) }.into()
+            RegOffset {
+                reg: LR,
+                add: true,
+                shift: Some(ImmShift { op: ShiftOp::ROR, imm: 20 })
+            }
+            .into()
         );
 
         let (_, (addr, offset)) = address("[r12, r9, ASR #1]..REST").unwrap();
         assert_eq!(addr, Address { base: R12, mode: Offset });
         assert_eq!(
             offset.unwrap(),
-            AddrIndex { reg: R9, shift: Some(ImmShift { op: ShiftOp::ASR, imm: 1 }) }.into()
+            RegOffset {
+                reg: R9,
+                add: true,
+                shift: Some(ImmShift { op: ShiftOp::ASR, imm: 1 })
+            }
+            .into()
         );
         let (_, (addr, offset)) = address("[r12, r9]..REST").unwrap();
         assert_eq!(addr, Address { base: R12, mode: Offset });
-        assert_eq!(offset.unwrap(), AddrIndex { reg: R9, shift: None }.into());
+        assert_eq!(offset.unwrap(), RegOffset { reg: R9, add: true, shift: None }.into());
 
         let (_, (addr, offset)) = address("[r3, sp]!..REST").unwrap();
         assert_eq!(addr, Address { base: R3, mode: PreIndex });
-        assert_eq!(offset.unwrap(), AddrIndex { reg: SP, shift: None }.into());
+        assert_eq!(offset.unwrap(), RegOffset { reg: SP, add: true, shift: None }.into());
 
         let (_, (addr, offset)) = address("[r12, #1932]..REST").unwrap();
         assert_eq!(addr, Address { base: R12, mode: Offset });
-        assert_eq!(offset.unwrap(), AddrOffset::Imm(1932));
+        assert_eq!(offset.unwrap(), ImmOffset { imm: 1932, add: true }.into());
 
         let (_, (addr, offset)) = address("[r0, #-123]!..REST").unwrap();
         assert_eq!(addr, Address { base: R0, mode: PreIndex });
-        assert_eq!(offset.unwrap(), AddrOffset::Imm(-123));
+        assert_eq!(offset.unwrap(), ImmOffset { imm: 123, add: false }.into());
 
         let (_, (addr, offset)) = address("[r0]..REST").unwrap();
         assert_eq!(addr, Address { base: R0, mode: Offset });
@@ -261,13 +279,40 @@ mod tests {
 
         let (_, (addr, offset)) = address("[r0], r0..REST").unwrap();
         assert_eq!(addr, Address { base: R0, mode: PostIndex });
-        assert_eq!(offset.unwrap(), AddrIndex { reg: R0, shift: None }.into());
+        assert_eq!(offset.unwrap(), RegOffset { reg: R0, add: true, shift: None }.into());
 
         let (_, (addr, offset)) = address("[r0], r0, LSR #23..REST").unwrap();
         assert_eq!(addr, Address { base: R0, mode: PostIndex });
         assert_eq!(
             offset.unwrap(),
-            AddrIndex { reg: R0, shift: Some(ImmShift { op: ShiftOp::LSR, imm: 23 }) }.into()
+            RegOffset {
+                reg: R0,
+                add: true,
+                shift: Some(ImmShift { op: ShiftOp::LSR, imm: 23 })
+            }
+            .into()
+        );
+        let (_, (addr, offset)) = address("[r12, - r9, ASR #1]..REST").unwrap();
+        assert_eq!(addr, Address { base: R12, mode: Offset });
+        assert_eq!(
+            offset.unwrap(),
+            RegOffset {
+                reg: R9,
+                add: false,
+                shift: Some(ImmShift { op: ShiftOp::ASR, imm: 1 })
+            }
+            .into()
+        );
+        let (_, (addr, offset)) = address("[r0], -r0, LSR #23..REST").unwrap();
+        assert_eq!(addr, Address { base: R0, mode: PostIndex });
+        assert_eq!(
+            offset.unwrap(),
+            RegOffset {
+                reg: R0,
+                add: false,
+                shift: Some(ImmShift { op: ShiftOp::LSR, imm: 23 })
+            }
+            .into()
         );
 
         assert!(address("[r1, r2, #123]").is_err());
@@ -284,10 +329,14 @@ mod tests {
                 cond: LE,
                 op: LDR,
                 operands: vec![Reg(R0), Addr(Address { base: R1, mode: PreIndex },),],
-                extra: Some(ExtraOperand::Offset(Index(AddrIndex {
-                    reg: R2,
-                    shift: Some(ImmShift { op: ShiftOp::LSL, imm: 92 },),
-                },),),),
+                extra: Some(
+                    RegOffset {
+                        reg: R2,
+                        add: true,
+                        shift: Some(ImmShift { op: ShiftOp::LSL, imm: 92 },),
+                    }
+                    .into()
+                ),
                 set_flags: false,
             }
         );

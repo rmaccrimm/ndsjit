@@ -457,3 +457,8 @@ fn test_disasm_extra_load_store(#[values("LDRH", "STRH", "LDRSB", "LDRSH")] op: 
     let input = post_index_reg + &pre_index_reg + &pre_index_imm + &pre_index_reg;
     disassembler_test_case(&input);
 }
+
+#[rstest]
+fn test_disasm_load_store() {
+    
+}
