@@ -98,7 +98,7 @@ fn reg_offset(i: &str) -> ParseResult<RegOffset> {
     let (i, neg) = opt(match_char('-'))(i)?;
     let (i, _) = multispace0(i)?;
     let (i, reg) = register(i)?;
-    let (i, shift) = opt(imm_shift)(i)?;
+    let (i, shift) = opt(alt((imm_shift, rrx_shift)))(i)?;
     Ok((i, RegOffset { reg, shift, add: neg.is_none() }))
 }
 
@@ -311,6 +311,28 @@ mod tests {
                 reg: R0,
                 add: false,
                 shift: Some(ImmShift { op: ShiftOp::LSR, imm: 23 })
+            }
+            .into()
+        );
+        let (_, (addr, offset)) = address("[r0, r1, rrx]..REST").unwrap();
+        assert_eq!(addr, Address { base: R0, mode: Offset });
+        assert_eq!(
+            offset.unwrap(),
+            RegOffset {
+                reg: R1,
+                add: true,
+                shift: Some(ImmShift { op: ShiftOp::RRX, imm: 1 })
+            }
+            .into()
+        );
+        let (_, (addr, offset)) = address("[r0], -r1, rrx..REST").unwrap();
+        assert_eq!(addr, Address { base: R0, mode: PostIndex });
+        assert_eq!(
+            offset.unwrap(),
+            RegOffset {
+                reg: R1,
+                add: false,
+                shift: Some(ImmShift { op: ShiftOp::RRX, imm: 1 })
             }
             .into()
         );

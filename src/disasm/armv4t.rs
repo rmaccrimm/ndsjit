@@ -7,6 +7,7 @@ use std::fmt::Write;
 use strum::{Display, EnumString};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, EnumString)]
+#[strum(ascii_case_insensitive)]
 pub enum Cond {
     EQ,
     NE,
@@ -115,6 +116,7 @@ pub enum Operand {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, EnumString)]
+#[strum(ascii_case_insensitive)]
 pub enum ShiftOp {
     LSL,
     LSR,
@@ -215,6 +217,7 @@ impl From<ImmShift> for ExtraOperand {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, EnumString, Display)]
+#[strum(ascii_case_insensitive)]
 pub enum Op {
     UNDEFINED,
     ADC,
