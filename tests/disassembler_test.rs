@@ -391,25 +391,13 @@ fn test_disasm_instr_MOV() {
 
 #[rstest]
 fn test_disasm_BX() {
-    // Hard-coding this case because BX pc gives an error (but still assembles)
-    let gas_output = "
-        1 0000 E12FFF10      BX r0\n
-        2 0004 E12FFF11      BX r1\n
-        3 0008 E12FFF12      BX r2\n
-        4 000c E12FFF13      BX r3\n
-        5 0010 E12FFF14      BX r4\n
-        6 0014 E12FFF15      BX r5\n
-        7 0018 E12FFF16      BX r6\n
-        8 001c E12FFF17      BX r7\n
-        9 0020 E12FFF18      BX r8\n
-        10 0024 E12FFF19     BX r9\n
-        11 0028 E12FFF1A     BX r10\n
-        12 002c E12FFF1B     BX r11\n
-        13 0030 E12FFF1C     BX r12\n
-        14 0034 E12FFF1D     BX sp\n
-        15 0038 E12FFF1E     BX lr\n
-        16 003c E12FFF1F     BX pc";
-    disassemble_and_compare(&gas_output);
+    disassembler_test_case(
+        &AsmGenerator::new("BX")
+            .no_s_suffix()
+            .no_pc()
+            .register()
+            .generate(),
+    )
 }
 
 #[rstest]
@@ -459,6 +447,25 @@ fn test_disasm_extra_load_store(#[values("LDRH", "STRH", "LDRSB", "LDRSH")] op: 
 }
 
 #[rstest]
-fn test_disasm_load_store() {
-    
+fn test_disasm_load_store(#[values("LDR")] op: &str) {
+    let mut rng = thread_rng();
+    let mut input = String::new();
+
+    // Pre-index/Offset reg
+    for comb in (0..3).map(|_| &REG_OPTS[..15]).multi_cartesian_product() {
+        let cond = COND_OPTS.choose(&mut rng).unwrap();
+        let excl = ["", "!"].choose(&mut rng).unwrap();
+        let sign = ["", "-"].choose(&mut rng).unwrap();
+        let shift = AsmGenerator::gen_random_shift();
+        write!(&mut input, "{op}{cond} {}, [{}, {sign}{}", comb[0], comb[1], comb[2]).unwrap();
+        if shift != "" {
+            write!(&mut input, ", {shift}").unwrap();
+        }
+        writeln!(&mut input, "]{excl}").unwrap();
+    }
+    // Pre-index/Offset imm
+    // Post-index reg
+    // Post-index imm
+
+    disassembler_test_case(&input);
 }
