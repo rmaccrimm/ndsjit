@@ -13,29 +13,11 @@ use nom::{
     combinator::{map, map_res, opt},
     error::{context, VerboseError},
     multi::separated_list1,
-    sequence::tuple,
+    sequence::{terminated, tuple},
     IResult,
 };
 
 pub type ParseResult<'a, T> = IResult<&'a str, T, VerboseError<&'a str>>;
-
-/// Attempt to parse an opcode, starting with the longest possible (8 chars) and moving to the
-/// shortest (1 char)
-fn op(input: &str) -> ParseResult<Op> {
-    context(
-        "Op",
-        alt((
-            map_res(take(8usize), Op::from_str),
-            map_res(take(7usize), Op::from_str),
-            map_res(take(6usize), Op::from_str),
-            map_res(take(5usize), Op::from_str),
-            map_res(take(4usize), Op::from_str),
-            map_res(take(3usize), Op::from_str),
-            map_res(take(2usize), Op::from_str),
-            map_res(take(1usize), Op::from_str),
-        )),
-    )(input)
-}
 
 fn cond(input: &str) -> ParseResult<Cond> {
     context("Cond", map_res(take(2usize), Cond::from_str))(input)
@@ -54,10 +36,14 @@ fn imm_val(i: &str) -> ParseResult<u32> {
     Ok((i, val))
 }
 
+/// Parses the instruction mnemonic and the whitespace which must follow it, e.g. "ADDEQS "
 fn mnemonic(i: &str) -> ParseResult<(Op, Cond, bool)> {
-    let (i, op) = op(i)?;
-    let (i, cond) = opt(cond)(i)?;
-    let (i, s) = opt(one_of("sS"))(i)?;
+    let op = |x: usize| map_res(take(x), Op::from_str);
+    let mnem = |x: usize| terminated(tuple((op(x), opt(cond), opt(one_of("sS")))), multispace1);
+    // Have to go through every possible length of op until we succesfully parse everything, up to
+    // the terminating whitespace
+    let mut parse = alt((mnem(8), mnem(7), mnem(6), mnem(5), mnem(4), mnem(3), mnem(2), mnem(1)));
+    let (i, (op, cond, s)) = parse(i)?;
     Ok((i, (op, cond.unwrap_or(Cond::AL), s.is_some())))
 }
 
@@ -187,8 +173,6 @@ pub fn instruction(i: &str) -> ParseResult<Instruction> {
         set_flags = true;
     }
 
-    let (i, _) = multispace1(i)?;
-
     let sep = tuple((multispace0, match_char(','), multispace0));
 
     // NOTE - issue with parsing: currently having more than 1 extra operand is considered a valid
@@ -206,17 +190,11 @@ mod tests {
     use crate::disasm::armv4t::{AddrMode::*, Cond::*, Op::*, Operand::*, Register::*, ShiftOp};
 
     #[test]
-    fn test_parse_op() {
-        assert_eq!(op("VQRDMULH.."), Ok(("..", Op::VQRDMULH)));
-        assert_eq!(op("B.."), Ok(("..", Op::B)));
-        assert_eq!(op("BX.."), Ok(("..", Op::BX)));
-    }
-
-    #[test]
     fn test_parse_mnemonic() {
-        assert_eq!(mnemonic("MLSOTHERTEXT"), Ok(("OTHERTEXT", (Op::MLS, Cond::AL, false))));
-        assert_eq!(mnemonic("MLSLSREST"), Ok(("REST", (Op::MLS, Cond::LS, false))));
-        assert_eq!(mnemonic("MLSLSS ..."), Ok((" ...", (Op::MLS, Cond::LS, true))));
+        assert_eq!(mnemonic("MLS OTHERTEXT"), Ok(("OTHERTEXT", (Op::MLS, Cond::AL, false))));
+        assert_eq!(mnemonic("MLSLS REST"), Ok(("REST", (Op::MLS, Cond::LS, false))));
+        assert_eq!(mnemonic("MLSLSS ..."), Ok(("...", (Op::MLS, Cond::LS, true))));
+        assert_eq!(mnemonic("LDRHI "), Ok(("", (Op::LDR, Cond::HI, false))));
     }
 
     #[test]
