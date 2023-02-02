@@ -163,10 +163,20 @@ pub fn arm_load_store(instr: u32) -> DisasmResult<Instruction> {
     let op = decode_load_store_op(op1)?;
     let rn = Register::try_from(bits(instr, 16..19))?;
     let rt = Register::try_from(bits(instr, 12..15))?;
+
     // indicates register vs immediate
     let a = bit(instr, 25);
-    // indicates add vs subtracted offset
+    let p = bit(instr, 24);
+    let w = bit(instr, 21);
+
     let add = bit(instr, 23) == 1;
+    let mode = match op {
+        Op::LDRT | Op::STRT | Op::STRBT | Op::LDRBT => match a {
+            1 => AddrMode::PostIndex,
+            _ => AddrMode::PreIndex,
+        },
+        _ => decode_addressing_mode(p, w)?,
+    };
 
     let mut instruction = Instruction {
         op,
@@ -175,40 +185,20 @@ pub fn arm_load_store(instr: u32) -> DisasmResult<Instruction> {
         ..Default::default()
     };
 
-    match op {
-        Op::LDRT | Op::STRT | Op::STRBT | Op::LDRBT => {
-            let sub = bit(instr, 23) == 0;
-            if a == 1 {
-                let addr = Address { base: rn, mode: AddrMode::PostIndex };
-                let rm = Register::try_from(bits(instr, 0..3))?;
-                let shift = ImmShift::decode(bits(instr, 5..6), bits(instr, 7..11))?.into();
-                let offset = RegOffset { reg: rm, shift: Some(shift), add }.into();
-                instruction.operands.push(Operand::Addr(addr));
-                instruction.extra = Some(offset);
-            } else {
-                let addr = Address { base: rn, mode: AddrMode::PostIndex };
-                // TODO - add vs sub
-                let offset = ImmOffset { imm: bits(instr, 0..12), add }.into();
-                instruction.operands.push(Operand::Addr(addr));
-                instruction.extra = Some(offset);
-            }
-        }
-        _ => {
-            let p = bit(instr, 24);
-            let w = bit(instr, 21);
-            let mode = decode_addressing_mode(p, w)?;
-            let addr = Address { base: rn, mode };
-            if a == 1 {
-                let rm = Register::try_from(bits(instr, 0..3))?;
-                let shift = ImmShift::decode(bits(instr, 5..6), bits(instr, 7..11))?.into();
-                let offset = RegOffset { reg: rm, shift: Some(shift), add }.into();
-                instruction.operands.push(Operand::Addr(addr));
-                instruction.extra = Some(offset);
-            } else {
-                instruction.extra = Some(ImmOffset { imm: bits(instr, 0..11), add }.into());
-            }
-        }
-    };
+    if a == 1 {
+        let addr = Address { base: rn, mode };
+        let rm = Register::try_from(bits(instr, 0..3))?;
+        let s = ImmShift::decode(bits(instr, 5..6), bits(instr, 7..11))?;
+        let shift = if s.imm == 0 { None } else { Some(s) };
+        let offset = RegOffset { reg: rm, shift, add };
+        instruction.operands.push(Operand::Addr(addr));
+        instruction.extra = Some(offset.into());
+    } else {
+        let addr = Address { base: rn, mode };
+        let offset = ImmOffset { imm: bits(instr, 0..12), add }.into();
+        instruction.operands.push(Operand::Addr(addr));
+        instruction.extra = Some(offset);
+    }
     Ok(instruction)
 }
 
