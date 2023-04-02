@@ -401,7 +401,7 @@ fn test_disasm_BX() {
 }
 
 #[rstest]
-fn test_disasm_extra_load_store(#[values("LDRH", "STRH", "LDRSB", "LDRSH")] op: &str) {
+fn test_disasm_load_store(#[values("LDR", "STR", "LDRH", "STRH", "LDRSB", "LDRSH")] op: &str) {
     let post_index_reg = AsmGenerator::new(op)
         .ual()
         .no_s_suffix()
@@ -443,35 +443,6 @@ fn test_disasm_extra_load_store(#[values("LDRH", "STRH", "LDRSB", "LDRSH")] op: 
         .end_addr()
         .generate();
     let input = post_index_reg + &pre_index_reg + &pre_index_imm + &pre_index_reg;
-    disassembler_test_case(&input);
-}
-
-#[rstest]
-fn test_disasm_load_store(#[values("LDR", "STR")] op: &str) {
-    let mut rng = thread_rng();
-    let mut input = String::new();
-
-    // Pre-index/Offset reg
-    for comb in (0..3).map(|_| &REG_OPTS[..15]).multi_cartesian_product() {
-        let cond = COND_OPTS.choose(&mut rng).unwrap();
-        let excl = ["", "!"].choose(&mut rng).unwrap();
-        let sign = ["", "-"].choose(&mut rng).unwrap();
-        let shift = AsmGenerator::gen_random_shift();
-        write!(
-            &mut input,
-            ".syntax unified; {op}{cond} {}, [{}, {sign}{}",
-            comb[0], comb[1], comb[2]
-        )
-        .unwrap();
-        if shift != "" {
-            write!(&mut input, ", {shift}").unwrap();
-        }
-        writeln!(&mut input, "]{excl}").unwrap();
-    }
-    // Pre-index/Offset imm
-    // Post-index reg
-    // Post-index imm
-
     disassembler_test_case(&input);
 }
 

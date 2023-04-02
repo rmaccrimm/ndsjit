@@ -195,7 +195,7 @@ pub fn arm_load_store(instr: u32) -> DisasmResult<Instruction> {
         instruction.extra = Some(offset.into());
     } else {
         let addr = Address { base: rn, mode };
-        let offset = ImmOffset { imm: bits(instr, 0..12), add }.into();
+        let offset = ImmOffset { imm: bits(instr, 0..11), add }.into();
         instruction.operands.push(Operand::Addr(addr));
         instruction.extra = Some(offset);
     }
