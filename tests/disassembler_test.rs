@@ -447,7 +447,7 @@ fn test_disasm_extra_load_store(#[values("LDRH", "STRH", "LDRSB", "LDRSH")] op: 
 }
 
 #[rstest]
-fn test_disasm_load_store(#[values("LDR")] op: &str) {
+fn test_disasm_load_store(#[values("LDR", "STR")] op: &str) {
     let mut rng = thread_rng();
     let mut input = String::new();
 
@@ -457,7 +457,12 @@ fn test_disasm_load_store(#[values("LDR")] op: &str) {
         let excl = ["", "!"].choose(&mut rng).unwrap();
         let sign = ["", "-"].choose(&mut rng).unwrap();
         let shift = AsmGenerator::gen_random_shift();
-        write!(&mut input, "{op}{cond} {}, [{}, {sign}{}", comb[0], comb[1], comb[2]).unwrap();
+        write!(
+            &mut input,
+            ".syntax unified; {op}{cond} {}, [{}, {sign}{}",
+            comb[0], comb[1], comb[2]
+        )
+        .unwrap();
         if shift != "" {
             write!(&mut input, ", {shift}").unwrap();
         }
@@ -467,5 +472,30 @@ fn test_disasm_load_store(#[values("LDR")] op: &str) {
     // Post-index reg
     // Post-index imm
 
+    disassembler_test_case(&input);
+}
+
+#[rstest]
+/// These instructions only have a single indexing mode
+fn test_disasm_load_store_post_index_only(#[values("LDRT", "STRT")] op: &str) {
+    let mut rng = thread_rng();
+    let mut input = String::new();
+
+    // Pre-index/Offset reg
+    for comb in (0..3).map(|_| &REG_OPTS[..15]).multi_cartesian_product() {
+        let cond = COND_OPTS.choose(&mut rng).unwrap();
+        let sign = ["", "-"].choose(&mut rng).unwrap();
+        let shift = AsmGenerator::gen_random_shift();
+        write!(
+            &mut input,
+            ".syntax unified; {op}{cond} {}, [{}], {sign}{}",
+            comb[0], comb[1], comb[2]
+        )
+        .unwrap();
+        if shift != "" {
+            write!(&mut input, ", {shift}").unwrap();
+        }
+        writeln!(&mut input, "").unwrap();
+    }
     disassembler_test_case(&input);
 }
