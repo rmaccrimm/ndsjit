@@ -203,11 +203,24 @@ pub fn arm_load_store(instr: u32) -> DisasmResult<Instruction> {
 }
 
 pub fn arm_media(instr: u32) -> DisasmResult<Instruction> {
-    todo!()
+    Err(DisasmError::new("media instructions undefined for ARMv4", instr))
 }
 
 pub fn arm_branch(instr: u32) -> DisasmResult<Instruction> {
-    todo!()
+    let op = match bits(instr, 24..25) {
+        0b10 => Op::B,
+        0b11 => Op::BL,
+        _ => {
+            return Err(DisasmError::new("invalid branch instruction", instr));
+        }
+    };
+    Ok(Instruction {
+        cond: Cond::try_from(bits(instr, 28..31))?,
+        op: op,
+        operands: vec![Operand::Imm(bits(instr, 0..23))],
+        extra: None,
+        set_flags: false,
+    })
 }
 
 pub fn arm_coprocessor(instr: u32) -> DisasmResult<Instruction> {

@@ -390,14 +390,22 @@ fn test_disasm_instr_MOV() {
 }
 
 #[rstest]
-fn test_disasm_BX() {
-    disassembler_test_case(
-        &AsmGenerator::new("BX")
-            .no_s_suffix()
-            .no_pc()
-            .register()
-            .generate(),
-    )
+fn test_disasm_branch() {
+    let bx = AsmGenerator::new("BX")
+        .no_s_suffix()
+        .no_pc()
+        .register()
+        .generate();
+    let b = AsmGenerator::new("B")
+        .no_s_suffix()
+        .immediate_value(0, 1 << 24)
+        .generate();
+    let bl = AsmGenerator::new("BL")
+        .no_s_suffix()
+        .immediate_value(0, 1 << 24)
+        .generate();
+    let input = bx + &b + &bl;
+    disassembler_test_case(&input);
 }
 
 #[rstest]
