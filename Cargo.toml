@@ -4,9 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-cranelift = "0.90.1"
-cranelift-jit = "0.90.1"
-cranelift-module = "0.90.1"
+cranelift = "0.95.1"
+cranelift-jit = "0.95.1"
+cranelift-module = "0.95.1"
+cranelift-frontend = "0.95.1"
+cranelift-codegen = "0.95.1"
 strum = { version = "0.24", features = ["derive"] }
 rand = "0.8.5"
 rstest = "0.16.0"
