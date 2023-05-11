@@ -1,17 +1,14 @@
 use cranelift::prelude::{AbiParam, EntityRef, GlobalValueData, InstBuilder, IntCC, MemFlags};
 use cranelift_codegen::ir::{
-    immediates::Offset32,
     types::{I32, I64},
-    ArgumentPurpose, Function, GlobalValue,
+    ArgumentPurpose, GlobalValue,
 };
 use cranelift_codegen::{settings, verify_function};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::Module;
 use std::error::Error;
-use std::process::exit;
 
-use super::instruction_translator::translate_instruction;
 use crate::disasm::armv4t::{Instruction, Register};
 
 /// Maybe this will persist between block translations and store the output functions?
