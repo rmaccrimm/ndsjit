@@ -14,10 +14,13 @@ use std::process::exit;
 use super::instruction_translator::translate_instruction;
 use crate::disasm::armv4t::{Instruction, Register};
 
+/// Maybe this will persist between block translations and store the output functions?
 struct TranslationState {
     register_vars: Vec<Variable>,
 }
 
+/// Plan for code "Blocks" - essentially going to be a list of disassembled instructions and maybe
+/// some helper functions for determining things like which registers actually get used
 pub struct BlockTranslator {
     builder_ctx: FunctionBuilderContext,
     state: TranslationState,
