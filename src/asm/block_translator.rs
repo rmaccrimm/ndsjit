@@ -1,4 +1,4 @@
-use cranelift::prelude::{AbiParam, EntityRef, GlobalValueData, InstBuilder, IntCC, MemFlags};
+use cranelift::prelude::{AbiParam, EntityRef, GlobalValueData, InstBuilder, MemFlags};
 use cranelift_codegen::ir::{
     types::{I32, I64},
     ArgumentPurpose, GlobalValue,
@@ -7,14 +7,18 @@ use cranelift_codegen::{settings, verify_function};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::Module;
-use std::error::Error;
 
-use crate::disasm::armv4t::{Instruction, Register};
+use strum::IntoEnumIterator;
 
-/// Maybe this will persist between block translations and store the output functions?
-struct TranslationState {
-    register_vars: Vec<Variable>,
-}
+use super::TranslationError;
+use std::mem;
+
+use crate::{
+    asm::instruction_translator::translate_instruction,
+    disasm::armv4t::{Instruction, Register},
+};
+
+use super::instruction_translator::{get_reg_index, TranslationState};
 
 /// Plan for code "Blocks" - essentially going to be a list of disassembled instructions and maybe
 /// some helper functions for determining things like which registers actually get used
@@ -31,7 +35,8 @@ impl BlockTranslator {
         }
     }
 
-    pub fn translate(&mut self, code: &Vec<Instruction>) -> Result<*const u8, Box<dyn Error>> {
+    /// TODO - more specific error type?
+    pub fn translate(&mut self, code: &Vec<Instruction>) -> Result<*const u8, TranslationError> {
         let jit_builder = JITBuilder::new(cranelift_module::default_libcall_names()).unwrap();
         let mut module = JITModule::new(jit_builder);
         let mut ctx = module.make_context();
@@ -52,35 +57,10 @@ impl BlockTranslator {
         let vmctx = builder.create_global_value(GlobalValueData::VMContext);
         gen_prologue(vmctx, &mut self.state, &mut builder);
 
-        // let mut current_block = entry_block;
-
         // Start loop
-
-        // Code for conditional execution
-        let instr_block = builder.create_block();
-        let next_block = builder.create_block();
-
-        // Still filling prev (entry) block at this point
-        let flags = builder.use_var(self.state.register_vars[16]);
-        let zero = builder.ins().iconst(I32, 0);
-        let res = builder.ins().icmp_imm(IntCC::Equal, flags, 0);
-        builder.ins().brif(res, instr_block, &[], next_block, &[]);
-
-        builder.seal_block(instr_block);
-
-        builder.switch_to_block(instr_block);
-
-        // Actual instruction cond
-        let r2 = builder.use_var(self.state.register_vars[2]);
-        let const_ = builder.ins().iconst(I32, 99);
-        let tmp = builder.ins().iadd(r2, const_);
-        builder.def_var(self.state.register_vars[2], tmp);
-        builder.ins().jump(next_block, &[]);
-
-        builder.seal_block(next_block);
-        builder.switch_to_block(next_block);
-
-        // End loop
+        for instr in code.iter() {
+            translate_instruction(instr, &self.state, &mut builder)?;
+        }
 
         gen_epilogue(vmctx, &self.state, &mut builder);
         builder.seal_all_blocks();
@@ -100,38 +80,23 @@ impl BlockTranslator {
     }
 }
 
+fn get_reg_offset(reg: Register) -> i32 {
+    // TODO -  generic reg size
+    (get_reg_index(reg) * mem::size_of::<u32>()) as i32
+}
+
 fn gen_prologue(vmctx: GlobalValue, state: &mut TranslationState, builder: &mut FunctionBuilder) {
     // TODO some kind of trait that governs access to CPU state
-    let registers = [
-        Register::R0,
-        Register::R1,
-        Register::R2,
-        Register::R3,
-        Register::R4,
-        Register::R5,
-        Register::R6,
-        Register::R7,
-        Register::R8,
-        Register::R9,
-        Register::R10,
-        Register::R11,
-        Register::R12,
-        Register::SP,
-        Register::LR,
-        Register::PC,
-        Register::FLAGS,
-    ];
-
     // Create a re-usable variable for each of the CPU registers
     // TODO - some sort of context/environment managing this ptr type and other things like it
     let base = builder.ins().global_value(I64, vmctx);
-    for (i, reg) in registers.iter().enumerate() {
+    for (i, reg) in Register::iter().enumerate() {
         let var = Variable::new(i);
         builder.declare_var(var, I32);
         state.register_vars.push(var);
         let tmp = builder
             .ins()
-            .load(I32, MemFlags::new(), base, 4 * (i as i32));
+            .load(I32, MemFlags::new(), base, get_reg_offset(reg));
         builder.def_var(var, tmp);
     }
 }
@@ -140,10 +105,50 @@ fn gen_epilogue(vmctx: GlobalValue, state: &TranslationState, builder: &mut Func
     let base = builder.ins().global_value(I64, vmctx);
     for (i, &var) in state.register_vars.iter().enumerate() {
         let arg = builder.use_var(var);
-        builder
-            .ins()
-            .store(MemFlags::new(), arg, base, 4 * (i as i32));
+        builder.ins().store(
+            MemFlags::new(),
+            arg,
+            base,
+            get_reg_offset(Register::try_from(i as u32).unwrap()),
+        );
     }
     let const_ = builder.ins().iconst(I32, 0);
     builder.ins().return_(&[const_]);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BlockTranslator;
+    use crate::disasm::armv4t::*;
+    use std::{mem, ptr};
+
+    #[test]
+    fn test_simple_program() {
+        let code = vec![Instruction {
+            cond: Cond::EQ,
+            op: Op::ADD,
+            operands: vec![
+                Operand::Reg(Register::R2),
+                Operand::Reg(Register::R2),
+                Operand::Imm(99),
+            ],
+            extra: None,
+            set_flags: false,
+        }];
+        let mut translator = BlockTranslator::new();
+        let func_ptr = translator.translate(&code).unwrap();
+
+        unsafe {
+            let mut vm_state = [0u32; 17];
+            let func: unsafe extern "C" fn(*mut [u32; 17]) -> i32 = mem::transmute(func_ptr);
+            // initial value
+            vm_state[2] = 10;
+            func(ptr::addr_of_mut!(vm_state));
+            assert_eq!(vm_state[2], 10);
+            //set Z flag
+            vm_state[16] = 1 << 30;
+            func(ptr::addr_of_mut!(vm_state));
+            assert_eq!(vm_state[2], 109);
+        }
+    }
 }

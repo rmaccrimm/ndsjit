@@ -18,7 +18,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // let mut vm_state = Regs::default();
     let mut vm_state = [0u32; 17];
-    vm_state[16] = 1;
+    vm_state[16] = 0;
     dbg!(vm_state);
 
     unsafe {
