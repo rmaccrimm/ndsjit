@@ -117,15 +117,21 @@ fn gen_epilogue(vmctx: GlobalValue, state: &TranslationState, builder: &mut Func
 }
 
 #[cfg(test)]
+#[allow(non_snake_case)]
 mod tests {
     use super::BlockTranslator;
     use crate::disasm::armv4t::*;
     use std::{mem, ptr};
 
-    #[test]
-    fn test_simple_program() {
+    type Func = unsafe extern "C" fn(*mut [u32; 17]) -> i32;
+    const V: u32 = 1 << 28;
+    const C: u32 = 1 << 29;
+    const Z: u32 = 1 << 30;
+    const N: u32 = 1 << 31;
+
+    fn add_with_cond(cond: Cond, arg: &mut [u32; 17]) {
         let code = vec![Instruction {
-            cond: Cond::EQ,
+            cond,
             op: Op::ADD,
             operands: vec![
                 Operand::Reg(Register::R2),
@@ -136,19 +142,29 @@ mod tests {
             set_flags: false,
         }];
         let mut translator = BlockTranslator::new();
-        let func_ptr = translator.translate(&code).unwrap();
-
         unsafe {
-            let mut vm_state = [0u32; 17];
-            let func: unsafe extern "C" fn(*mut [u32; 17]) -> i32 = mem::transmute(func_ptr);
-            // initial value
-            vm_state[2] = 10;
-            func(ptr::addr_of_mut!(vm_state));
-            assert_eq!(vm_state[2], 10);
-            //set Z flag
-            vm_state[16] = 1 << 30;
-            func(ptr::addr_of_mut!(vm_state));
-            assert_eq!(vm_state[2], 109);
+            let func_ptr = translator.translate(&code).unwrap();
+            let func: Func = mem::transmute(func_ptr);
+            func(ptr::addr_of_mut!(*arg));
         }
     }
+
+    #[test]
+    fn test_EQ_NE() {
+        let mut regs = [0u32; 17];
+        regs[16] = C | V | N;
+        add_with_cond(Cond::EQ, &mut regs);
+        assert_eq!(regs[2], 0);
+        add_with_cond(Cond::NE, &mut regs);
+        assert_eq!(regs[2], 99);
+        regs[2] = 0;
+        regs[16] |= Z;
+        add_with_cond(Cond::NE, &mut regs);
+        assert_eq!(regs[2], 0);
+        add_with_cond(Cond::EQ, &mut regs);
+        assert_eq!(regs[2], 99);
+    }
+
+    #[test]
+    fn test_CS_CC() {}
 }
