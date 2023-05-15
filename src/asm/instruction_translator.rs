@@ -91,7 +91,7 @@ pub fn translate_cond(
             builder.ins().icmp_imm(IntCC::Equal, arg, 1)
         }
         Cond::VC => {
-            let tmp = builder.ins().ushr_imm(flags, z);
+            let tmp = builder.ins().ushr_imm(flags, v);
             let arg = builder.ins().band_imm(tmp, 1);
             builder.ins().icmp_imm(IntCC::Equal, arg, 0)
         }
@@ -103,13 +103,14 @@ pub fn translate_cond(
             builder.ins().icmp_imm(IntCC::Equal, arg, 1)
         }
         Cond::LS => {
-            // Z == 1 or C == 0
             let v1 = builder.ins().ushr_imm(flags, c);
             let v2 = builder.ins().band_imm(v1, 1);
-            let v3 = builder.ins().ushr_imm(flags, z);
-            let v4 = builder.ins().band_imm(v3, 1);
-            let v5 = builder.ins().band(v2, v4);
-            builder.ins().icmp_imm(IntCC::Equal, v5, 1)
+            let v3 = builder.ins().icmp_imm(IntCC::Equal, v2, 0);
+            let v4 = builder.ins().ushr_imm(flags, z);
+            let v5 = builder.ins().band_imm(v4, 1);
+            let v6 = builder.ins().icmp_imm(IntCC::Equal, v5, 1);
+            // Z == 1 or C == 0
+            builder.ins().bor(v3, v6)
         }
         Cond::GE => {
             // N == V
