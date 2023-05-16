@@ -156,30 +156,6 @@ mod tests {
         }
     }
 
-    // Template
-    // add_with_cond_test(
-    //     Cond::,
-    //     // NZCV
-    //     &vec![
-    //         0b0000,
-    //         0b0001,
-    //         0b0010,
-    //         0b0011,
-    //         0b0100,
-    //         0b0101,
-    //         0b0110,
-    //         0b0111,
-    //         0b1000,
-    //         0b1001,
-    //         0b1010,
-    //         0b1011,
-    //         0b1100,
-    //         0b1101,
-    //         0b1110,
-    //         0b1111,
-    //     ]
-    // );
-
     #[test]
     fn test_EQ() {
         add_with_cond_test(
@@ -277,6 +253,53 @@ mod tests {
             // NZCV
             &vec![
                 0b0000, 0b0001, 0b0100, 0b0101, 0b0110, 0b0111, 0b1000, 0b1001, 0b1100, 0b1101,
+                0b1110, 0b1111,
+            ],
+        );
+    }
+
+    #[test]
+    fn test_GE() {
+        add_with_cond_test(
+            Cond::GE,
+            // N == V
+            // NZCV
+            &vec![
+                0b0000, 0b0010, 0b0100, 0b0110, 0b1001, 0b1011, 0b1101, 0b1111,
+            ],
+        );
+    }
+
+    #[test]
+    fn test_LT() {
+        add_with_cond_test(
+            Cond::LT,
+            // N != V
+            // NZCV
+            &vec![
+                0b0001, 0b0011, 0b0101, 0b0111, 0b1000, 0b1010, 0b1100, 0b1110,
+            ],
+        );
+    }
+
+    #[test]
+    fn test_GT() {
+        add_with_cond_test(
+            Cond::GT,
+            // Z == 0 and N == V
+            // NZCV
+            &vec![0b0000, 0b0010, 0b1001, 0b1011],
+        );
+    }
+
+    #[test]
+    fn test_LE() {
+        add_with_cond_test(
+            Cond::LE,
+            // Z == 1 or N != V
+            // NZCV
+            &vec![
+                0b0001, 0b0011, 0b0100, 0b0101, 0b0110, 0b0111, 0b1000, 0b1010, 0b1100, 0b1101,
                 0b1110, 0b1111,
             ],
         );
