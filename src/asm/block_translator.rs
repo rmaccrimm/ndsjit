@@ -129,7 +129,7 @@ mod tests {
     const Z: u32 = 1 << 30;
     const N: u32 = 1 << 31;
 
-    fn add_with_cond_test(cond: Cond, arg: &mut [u32; 17], expected: u32) {
+    fn add_with_cond_test(cond: Cond, true_patterns: &Vec<u32>) {
         let code = vec![Instruction {
             cond,
             op: Op::ADD,
@@ -142,125 +142,143 @@ mod tests {
             set_flags: false,
         }];
         let mut translator = BlockTranslator::new();
-        unsafe {
-            let func_ptr = translator.translate(&code).unwrap();
-            let func: Func = mem::transmute(func_ptr);
-            func(ptr::addr_of_mut!(*arg));
+        let func_ptr = translator.translate(&code).unwrap();
+        for mask in 0..16 {
+            let mut regs = [0u32; 17];
+            regs[16] = mask << 28;
+            println!("flags: {:#034b}", regs[16]);
+            unsafe {
+                let func: Func = mem::transmute(func_ptr);
+                func(ptr::addr_of_mut!(regs));
+            }
+            // If mask is one of the true patterns, i.e. cond is met, R2 should be set to 99
+            assert_eq!(true_patterns.contains(&mask), regs[2] == 99);
         }
-        assert_eq!(arg[2], expected);
     }
+
+    // Template
+    // add_with_cond_test(
+    //     Cond::,
+    //     // NZCV
+    //     &vec![
+    //         0b0000,
+    //         0b0001,
+    //         0b0010,
+    //         0b0011,
+    //         0b0100,
+    //         0b0101,
+    //         0b0110,
+    //         0b0111,
+    //         0b1000,
+    //         0b1001,
+    //         0b1010,
+    //         0b1011,
+    //         0b1100,
+    //         0b1101,
+    //         0b1110,
+    //         0b1111,
+    //     ]
+    // );
 
     #[test]
     fn test_EQ() {
-        let mut regs = [0u32; 17];
-        regs[16] = C | V | N;
-        add_with_cond_test(Cond::EQ, &mut regs, 0);
-        regs[16] |= Z;
-        add_with_cond_test(Cond::EQ, &mut regs, 99);
+        add_with_cond_test(
+            Cond::EQ,
+            &vec![
+                0b0100, 0b0101, 0b0110, 0b0111, 0b1100, 0b1101, 0b1110, 0b1111,
+            ],
+        );
     }
 
     #[test]
     fn test_NE() {
-        let mut regs = [0u32; 17];
-        regs[16] = Z;
-        add_with_cond_test(Cond::NE, &mut regs, 0);
-        regs[16] = 0;
-        add_with_cond_test(Cond::NE, &mut regs, 99);
+        add_with_cond_test(
+            Cond::NE,
+            &vec![
+                0b0000, 0b0001, 0b0010, 0b0011, 0b1000, 0b1001, 0b1010, 0b1011,
+            ],
+        );
     }
 
     #[test]
     fn test_CS() {
-        let mut regs = [0u32; 17];
-        regs[16] = Z | V | N;
-        add_with_cond_test(Cond::CS, &mut regs, 0);
-        regs[16] |= C;
-        add_with_cond_test(Cond::CS, &mut regs, 99);
+        add_with_cond_test(
+            Cond::CS,
+            &vec![
+                0b0010, 0b0011, 0b0110, 0b0111, 0b1010, 0b1011, 0b1110, 0b1111,
+            ],
+        );
     }
 
     #[test]
     fn test_CC() {
-        let mut regs = [0u32; 17];
-        regs[16] = C;
-        add_with_cond_test(Cond::NE, &mut regs, 0);
-        regs[16] = 0;
-        add_with_cond_test(Cond::NE, &mut regs, 99);
+        add_with_cond_test(
+            Cond::CC,
+            &vec![
+                0b0000, 0b0001, 0b0100, 0b0101, 0b1000, 0b1001, 0b1100, 0b1101,
+            ],
+        );
     }
 
     #[test]
     fn test_MI() {
-        let mut regs = [0u32; 17];
-        regs[16] = C | Z | V;
-        add_with_cond_test(Cond::MI, &mut regs, 0);
-        regs[16] |= N;
-        add_with_cond_test(Cond::MI, &mut regs, 99);
+        add_with_cond_test(
+            Cond::MI,
+            &vec![
+                0b1000, 0b1001, 0b1010, 0b1011, 0b1100, 0b1101, 0b1110, 0b1111,
+            ],
+        );
     }
 
     #[test]
     fn test_PL() {
-        let mut regs = [0u32; 17];
-        regs[16] = N;
-        add_with_cond_test(Cond::NE, &mut regs, 0);
-        regs[16] = 0;
-        add_with_cond_test(Cond::NE, &mut regs, 99);
+        add_with_cond_test(
+            Cond::PL,
+            &vec![
+                0b0000, 0b0001, 0b0010, 0b0011, 0b0100, 0b0101, 0b0110, 0b0111,
+            ],
+        );
     }
 
     #[test]
     fn test_VS() {
-        let mut regs = [0u32; 17];
-        regs[16] = C | Z | N;
-        add_with_cond_test(Cond::VS, &mut regs, 0);
-        regs[16] |= V;
-        add_with_cond_test(Cond::VS, &mut regs, 99);
+        add_with_cond_test(
+            Cond::VS,
+            &vec![
+                0b0001, 0b0011, 0b0101, 0b0111, 0b1001, 0b1011, 0b1101, 0b1111,
+            ],
+        );
     }
 
     #[test]
     fn test_VC() {
-        let mut regs = [0u32; 17];
-        regs[16] = V;
-        add_with_cond_test(Cond::VC, &mut regs, 0);
-        regs[16] = 0;
-        add_with_cond_test(Cond::VC, &mut regs, 99);
+        add_with_cond_test(
+            Cond::VC,
+            &vec![
+                0b0000, 0b0010, 0b0100, 0b0110, 0b1000, 0b1010, 0b1100, 0b1110,
+            ],
+        );
     }
 
     #[test]
     fn test_HI() {
-        let mut regs = [0u32; 17];
-        regs[16] = 0;
-        add_with_cond_test(Cond::HI, &mut regs, 0);
-        regs[16] = Z | N | V;
-        add_with_cond_test(Cond::HI, &mut regs, 0);
-        regs[16] = C | Z;
-        add_with_cond_test(Cond::HI, &mut regs, 0);
-        regs[16] = C;
-        add_with_cond_test(Cond::HI, &mut regs, 99);
-        regs[2] = 0;
-        regs[16] = C | N;
-        add_with_cond_test(Cond::HI, &mut regs, 99);
-        regs[2] = 0;
-        regs[16] = C | V | N;
-        add_with_cond_test(Cond::HI, &mut regs, 99);
+        add_with_cond_test(
+            Cond::HI,
+            // C & ~Z
+            // NZCV
+            &vec![0b0010, 0b0011, 0b1010, 0b1011],
+        );
     }
 
     #[test]
     fn test_LS() {
-        let mut regs = [0u32; 17];
-        // Z | C
-        // 0 | 0 => 1
-        // 0 | 1 => 0
-        // 1 | 0 => 1
-        // 1 | 1 => 1
-
-        regs[16] = C;
-        add_with_cond_test(Cond::LS, &mut regs, 0);
-        regs[16] = C | V;
-        add_with_cond_test(Cond::LS, &mut regs, 0);
-        regs[16] = 0;
-        add_with_cond_test(Cond::LS, &mut regs, 99);
-        regs[2] = 0;
-        regs[16] = Z;
-        add_with_cond_test(Cond::LS, &mut regs, 99);
-        regs[2] = 0;
-        regs[16] = C | Z;
-        add_with_cond_test(Cond::LS, &mut regs, 99);
+        add_with_cond_test(
+            Cond::LS,
+            // NZCV
+            &vec![
+                0b0000, 0b0001, 0b0100, 0b0101, 0b0110, 0b0111, 0b1000, 0b1001, 0b1100, 0b1101,
+                0b1110, 0b1111,
+            ],
+        );
     }
 }
