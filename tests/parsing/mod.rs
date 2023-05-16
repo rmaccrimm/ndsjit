@@ -1,6 +1,6 @@
 use ndsjit::disasm::armv4t::{
     parsing::{instruction, ParseResult},
-    Cond, Instruction, Operand, RegShift,
+    Cond, Instruction, Operand, Shift,
 };
 
 use std::error::Error;
@@ -112,7 +112,7 @@ mod tests {
                     op: Op::AND,
                     operands: vec![Operand::Reg(SP), Operand::Reg(LR), Operand::Reg(R4)],
                     set_flags: false,
-                    extra: Some(RegShift { op: LSL, reg: R6 }.into())
+                    extra: Some(Shift::reg(LSL, R6).into())
                 }
             })
         );

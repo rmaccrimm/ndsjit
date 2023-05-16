@@ -1,8 +1,8 @@
 use std::str::FromStr;
 
 use super::{
-    AddrMode, Address, Cond, ExtraOperand, Instruction, Offset, Op, Operand, Register, Shift,
-    ShiftOp,
+    AddrMode, Address, Cond, ExtraOperand, ImmShift, Instruction, Offset, Op, Operand, Register,
+    Shift, ShiftOp,
 };
 use nom::{
     branch::alt,
@@ -50,21 +50,21 @@ fn mnemonic(i: &str) -> ParseResult<(Op, Cond, bool)> {
 /// Parses an immediate shift, starting from the comma following a base register
 /// e.g. [r0, r1, lsl #123]!
 ///             ^--------^ parses this span
-fn imm_shift(i: &str) -> ParseResult<Shift> {
+fn imm_shift(i: &str) -> ParseResult<ImmShift> {
     let (i, _) = match_char(',')(i)?;
     let (i, _) = multispace0(i)?;
     let (i, op) = shift_op(i)?;
     let (i, _) = multispace0(i)?;
     let (i, imm) = imm_val(i)?;
-    Ok((i, Shift::imm(op, imm)))
+    Ok((i, ImmShift { op, imm }))
 }
 
 /// Isn't followed by another operand, unlike other shifts
-fn rrx_shift(i: &str) -> ParseResult<Shift> {
+fn rrx_shift(i: &str) -> ParseResult<ImmShift> {
     let (i, _) = match_char(',')(i)?;
     let (i, _) = multispace0(i)?;
     let (i, op) = tag_no_case("RRX")(i)?;
-    Ok((i, Shift::imm(op.parse().unwrap(), 1)))
+    Ok((i, ImmShift { op: op.parse().unwrap(), imm: 1 }))
 }
 
 /// Parses a register shift, starting from the comma following a base register
@@ -80,22 +80,22 @@ fn reg_shift(i: &str) -> ParseResult<Shift> {
 }
 
 /// Parse an index register offset with optional shift
-fn reg_offset(i: &str) -> ParseResult<RegOffset> {
+fn reg_offset(i: &str) -> ParseResult<Offset> {
     let (i, neg) = opt(match_char('-'))(i)?;
     let (i, _) = multispace0(i)?;
     let (i, reg) = register(i)?;
     let (i, shift) = opt(alt((imm_shift, rrx_shift)))(i)?;
-    Ok((i, RegOffset { reg, shift, add: neg.is_none() }))
+    Ok((i, Offset::reg(reg, shift, neg.is_none())))
 }
 
 // Parse an immediate address offset value (signed 32-bit)
-fn imm_offset(i: &str) -> ParseResult<ImmOffset> {
+fn imm_offset(i: &str) -> ParseResult<Offset> {
     let (i, _) = match_char('#')(i)?;
     let (i, _) = multispace0(i)?;
     let (i, neg) = opt(match_char('-'))(i)?;
     let (i, _) = multispace0(i)?;
     let (i, imm) = match_u32(i)?;
-    Ok((i, ImmOffset { imm, add: neg.is_none() }))
+    Ok((i, Offset::imm(imm, neg.is_none())))
 }
 
 /// Parse a non post-indexed offset, i.e. one appearing between the square brackets, and addressing
@@ -187,7 +187,7 @@ pub fn instruction(i: &str) -> ParseResult<Instruction> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::disasm::armv4t::{AddrMode::*, Cond::*, Op::*, Operand::*, Register::*, ShiftOp};
+    use crate::disasm::armv4t::{Cond::*, OffsetValue, Op::*, Operand::*, Register::*};
 
     #[test]
     fn test_parse_mnemonic() {
@@ -201,118 +201,78 @@ mod tests {
     fn test_parse_address() {
         let (rest, (addr, offset)) = address("[r0, r1, LSL #19]!..REST").unwrap();
         assert_eq!(rest, "..REST");
-        assert_eq!(addr, Address { base: R0, mode: PreIndex });
+        assert_eq!(addr, Address { base: R0, mode: AddrMode::PreIndex });
         assert_eq!(
             offset.unwrap(),
-            RegOffset {
-                reg: R1,
-                add: true,
-                shift: Some(ImmShift { op: ShiftOp::LSL, imm: 19 })
-            }
-            .into()
+            Offset::reg(R1, Some(ImmShift { op: ShiftOp::LSL, imm: 19 }), true,).into()
         );
 
         let (_, (addr, offset)) = address("[PC, LR, ROR #20]..REST").unwrap();
-        assert_eq!(addr, Address { base: PC, mode: Offset });
+        assert_eq!(addr, Address { base: PC, mode: AddrMode::Offset });
         assert_eq!(
             offset.unwrap(),
-            RegOffset {
-                reg: LR,
-                add: true,
-                shift: Some(ImmShift { op: ShiftOp::ROR, imm: 20 })
-            }
-            .into()
+            Offset::reg(LR, Some(ImmShift { op: ShiftOp::ROR, imm: 20 }), true).into()
         );
 
         let (_, (addr, offset)) = address("[r12, r9, ASR #1]..REST").unwrap();
-        assert_eq!(addr, Address { base: R12, mode: Offset });
+        assert_eq!(addr, Address { base: R12, mode: AddrMode::Offset });
         assert_eq!(
             offset.unwrap(),
-            RegOffset {
-                reg: R9,
-                add: true,
-                shift: Some(ImmShift { op: ShiftOp::ASR, imm: 1 })
-            }
-            .into()
+            Offset::reg(R9, Some(ImmShift { op: ShiftOp::ASR, imm: 1 }), true).into()
         );
         let (_, (addr, offset)) = address("[r12, r9]..REST").unwrap();
-        assert_eq!(addr, Address { base: R12, mode: Offset });
-        assert_eq!(offset.unwrap(), RegOffset { reg: R9, add: true, shift: None }.into());
+        assert_eq!(addr, Address { base: R12, mode: AddrMode::Offset });
+        assert_eq!(offset.unwrap(), Offset::reg(R9, None, true).into());
 
         let (_, (addr, offset)) = address("[r3, sp]!..REST").unwrap();
-        assert_eq!(addr, Address { base: R3, mode: PreIndex });
-        assert_eq!(offset.unwrap(), RegOffset { reg: SP, add: true, shift: None }.into());
+        assert_eq!(addr, Address { base: R3, mode: AddrMode::PreIndex });
+        assert_eq!(offset.unwrap(), Offset::reg(SP, None, true).into());
 
         let (_, (addr, offset)) = address("[r12, #1932]..REST").unwrap();
-        assert_eq!(addr, Address { base: R12, mode: Offset });
-        assert_eq!(offset.unwrap(), ImmOffset { imm: 1932, add: true }.into());
+        assert_eq!(addr, Address { base: R12, mode: AddrMode::Offset });
+        assert_eq!(offset.unwrap(), Offset::imm(1932, true).into());
 
         let (_, (addr, offset)) = address("[r0, #-123]!..REST").unwrap();
-        assert_eq!(addr, Address { base: R0, mode: PreIndex });
-        assert_eq!(offset.unwrap(), ImmOffset { imm: 123, add: false }.into());
+        assert_eq!(addr, Address { base: R0, mode: AddrMode::PreIndex });
+        assert_eq!(offset.unwrap(), Offset::imm(123, false).into());
 
         let (_, (addr, offset)) = address("[r0]..REST").unwrap();
-        assert_eq!(addr, Address { base: R0, mode: Offset });
+        assert_eq!(addr, Address { base: R0, mode: AddrMode::Offset });
         assert_eq!(offset, None);
 
         let (_, (addr, offset)) = address("[r0], r0..REST").unwrap();
-        assert_eq!(addr, Address { base: R0, mode: PostIndex });
-        assert_eq!(offset.unwrap(), RegOffset { reg: R0, add: true, shift: None }.into());
+        assert_eq!(addr, Address { base: R0, mode: AddrMode::PostIndex });
+        assert_eq!(offset.unwrap(), Offset::reg(R0, None, true).into());
 
         let (_, (addr, offset)) = address("[r0], r0, LSR #23..REST").unwrap();
-        assert_eq!(addr, Address { base: R0, mode: PostIndex });
+        assert_eq!(addr, Address { base: R0, mode: AddrMode::PostIndex });
         assert_eq!(
             offset.unwrap(),
-            RegOffset {
-                reg: R0,
-                add: true,
-                shift: Some(ImmShift { op: ShiftOp::LSR, imm: 23 })
-            }
-            .into()
+            Offset::reg(R0, Some(ImmShift { op: ShiftOp::LSR, imm: 23 }), true,).into()
         );
         let (_, (addr, offset)) = address("[r12, - r9, ASR #1]..REST").unwrap();
-        assert_eq!(addr, Address { base: R12, mode: Offset });
+        assert_eq!(addr, Address { base: R12, mode: AddrMode::Offset });
         assert_eq!(
             offset.unwrap(),
-            RegOffset {
-                reg: R9,
-                add: false,
-                shift: Some(ImmShift { op: ShiftOp::ASR, imm: 1 })
-            }
-            .into()
+            Offset::reg(R9, Some(ImmShift { op: ShiftOp::ASR, imm: 1 }), false,).into()
         );
         let (_, (addr, offset)) = address("[r0], -r0, LSR #23..REST").unwrap();
-        assert_eq!(addr, Address { base: R0, mode: PostIndex });
+        assert_eq!(addr, Address { base: R0, mode: AddrMode::PostIndex });
         assert_eq!(
             offset.unwrap(),
-            RegOffset {
-                reg: R0,
-                add: false,
-                shift: Some(ImmShift { op: ShiftOp::LSR, imm: 23 })
-            }
-            .into()
+            Offset::reg(R0, Some(ImmShift { op: ShiftOp::LSR, imm: 23 }), false,).into()
         );
         let (_, (addr, offset)) = address("[r0, r1, rrx]..REST").unwrap();
-        assert_eq!(addr, Address { base: R0, mode: Offset });
+        assert_eq!(addr, Address { base: R0, mode: AddrMode::Offset });
         assert_eq!(
             offset.unwrap(),
-            RegOffset {
-                reg: R1,
-                add: true,
-                shift: Some(ImmShift { op: ShiftOp::RRX, imm: 1 })
-            }
-            .into()
+            Offset::reg(R1, Some(ImmShift { op: ShiftOp::RRX, imm: 1 }), true,).into()
         );
         let (_, (addr, offset)) = address("[r0], -r1, rrx..REST").unwrap();
-        assert_eq!(addr, Address { base: R0, mode: PostIndex });
+        assert_eq!(addr, Address { base: R0, mode: AddrMode::PostIndex });
         assert_eq!(
             offset.unwrap(),
-            RegOffset {
-                reg: R1,
-                add: false,
-                shift: Some(ImmShift { op: ShiftOp::RRX, imm: 1 })
-            }
-            .into()
+            Offset::reg(R1, Some(ImmShift { op: ShiftOp::RRX, imm: 1 }), false,).into()
         );
 
         assert!(address("[r1, r2, #123]").is_err());
@@ -328,14 +288,12 @@ mod tests {
             Instruction {
                 cond: LE,
                 op: LDR,
-                operands: vec![Reg(R0), Addr(Address { base: R1, mode: PreIndex },),],
+                operands: vec![
+                    Reg(R0),
+                    Addr(Address { base: R1, mode: AddrMode::PreIndex },),
+                ],
                 extra: Some(
-                    RegOffset {
-                        reg: R2,
-                        add: true,
-                        shift: Some(ImmShift { op: ShiftOp::LSL, imm: 92 },),
-                    }
-                    .into()
+                    Offset::reg(R2, Some(ImmShift { op: ShiftOp::LSL, imm: 92 }), true,).into()
                 ),
                 set_flags: false,
             }

@@ -1,6 +1,6 @@
 use super::armv4t::{
-    AddrMode, Address, Cond, ExtraOperand, ExtraValue, Instruction, Offset, Op, Operand, Register,
-    Shift, ShiftOp,
+    AddrMode, Address, Cond, ExtraOperand, ExtraValue, ImmShift, Instruction, Offset, Op, Operand,
+    Register, Shift, ShiftOp,
 };
 use super::bits::{bit, bit_match, bits, pick_bits};
 use super::{DisasmError, DisasmResult};
@@ -154,7 +154,7 @@ fn decode_addressing_mode(p: u32, w: u32) -> DisasmResult<AddrMode> {
     Ok(mode)
 }
 
-pub fn decode_imm_shift(shift_op: u32, imm5: u32) -> Result<(ShiftOp, u32), DisasmError> {
+pub fn decode_imm_shift(shift_op: u32, imm5: u32) -> Result<ImmShift, DisasmError> {
     if shift_op >= 4 {
         return Err(DisasmError::new("shift op must be a 2-bit value", shift_op));
     }
@@ -174,7 +174,7 @@ pub fn decode_imm_shift(shift_op: u32, imm5: u32) -> Result<(ShiftOp, u32), Disa
         }
         _ => unreachable!(),
     };
-    Ok((op, imm))
+    Ok(ImmShift { op, imm })
 }
 
 pub fn arm_unconditional(instr: u32) -> DisasmResult<Instruction> {
@@ -211,16 +211,11 @@ pub fn arm_load_store(instr: u32) -> DisasmResult<Instruction> {
     let addr = Address { base: rn, mode };
     let offset = if a == 1 {
         let rm = Register::try_from(bits(instr, 0..3))?;
-        let (shift_op, amt) = decode_imm_shift(bits(instr, 5..6), bits(instr, 7..11))?;
-        let shift_op = if amt == 0 { None } else { Some(shift_op) };
-        Offset { value: ExtraValue::Reg(rm), shift_op, shift_amt: amt, add }
+        let shift = decode_imm_shift(bits(instr, 5..6), bits(instr, 7..11))?;
+        let shift = if shift.imm == 0 { None } else { Some(shift) };
+        Offset::reg(rm, shift, add)
     } else {
-        Offset {
-            value: ExtraValue::Imm(bits(instr, 0..11)),
-            shift_op: None,
-            shift_amt: 0,
-            add,
-        }
+        Offset::imm(bits(instr, 0..11), add)
     };
     instruction.operands.push(Operand::Addr(addr));
     instruction.extra = Some(offset.into());
@@ -274,8 +269,8 @@ fn arm_data_proc_reg(instr: u32) -> DisasmResult<Instruction> {
     let rm = Register::try_from(bits(instr, 0..3))?;
     let imm5 = bits(instr, 7..11);
 
-    let (shift_op, amt) = decode_imm_shift(bits(instr, 5..6), imm5)?;
-    let shift = (amt != 0).then_some(ExtraOperand::from(Shift::imm(shift_op, amt)));
+    let shift = decode_imm_shift(bits(instr, 5..6), imm5)?;
+    let shift = (shift.imm != 0).then_some(ExtraOperand::from(shift));
 
     match op {
         Op::ADR => {
@@ -520,12 +515,7 @@ fn arm_extra_load_store_reg(instr: u32) -> DisasmResult<Instruction> {
 
     let mode = decode_addressing_mode(p, w).map_err(|e| e.set_instr(instr))?;
     let addr = Address { base: rn, mode };
-    let offset = Offset {
-        value: ExtraValue::Reg(rm),
-        shift_op: None,
-        shift_amt: 0,
-        add,
-    };
+    let offset = Offset::reg(rm, None, add);
 
     Ok(Instruction {
         op,
@@ -552,12 +542,7 @@ fn arm_extra_load_store_imm(instr: u32) -> DisasmResult<Instruction> {
     let mode = decode_addressing_mode(p, w).map_err(|e| e.set_instr(instr))?;
 
     let addr = Address { base: rn, mode };
-    let offset = Offset {
-        value: ExtraValue::Imm(imm),
-        shift_op: None,
-        shift_amt: 0,
-        add,
-    };
+    let offset = Offset::imm(imm, add);
 
     Ok(Instruction {
         op,

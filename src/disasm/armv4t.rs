@@ -138,6 +138,12 @@ pub struct Shift {
     pub value: ExtraValue,
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct ImmShift {
+    pub op: ShiftOp,
+    pub imm: u32,
+}
+
 impl Shift {
     pub fn reg(op: ShiftOp, reg: Register) -> Self {
         Self { op, value: ExtraValue::Reg(reg) }
@@ -145,6 +151,12 @@ impl Shift {
 
     pub fn imm(op: ShiftOp, imm: u32) -> Self {
         Self { op, value: ExtraValue::Imm(imm) }
+    }
+}
+
+impl From<ImmShift> for Shift {
+    fn from(shift: ImmShift) -> Self {
+        Self::imm(shift.op, shift.imm)
     }
 }
 
@@ -156,21 +168,32 @@ pub enum AddrMode {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum OffsetValue {
+    Reg {
+        reg: Register,
+        shift: Option<ImmShift>,
+    },
+    Imm(u32),
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Offset {
-    /// Source of the offset
-    pub value: ExtraValue,
-
-    /// Type of shift which can optionally be applied to value
-    pub shift_op: Option<ShiftOp>,
-
-    /// How much to shift by (if shift_op present)
-    pub shift_amt: u32,
+    // The source of the offset value to be added or subtracted
+    pub value: OffsetValue,
 
     /// Whether the offset is added (true) to base address, or subtracted (false)
     pub add: bool,
 }
 
-impl Offset {}
+impl Offset {
+    pub fn imm(imm: u32, add: bool) -> Self {
+        Self { value: OffsetValue::Imm(imm), add }
+    }
+
+    pub fn reg(reg: Register, shift: Option<ImmShift>, add: bool) -> Self {
+        Self { value: OffsetValue::Reg { reg: reg, shift: shift }, add }
+    }
+}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 /// Auxillary operands, of which there can be at most 1 per instruction. Used to indicate a shift
@@ -186,9 +209,15 @@ impl From<Offset> for ExtraOperand {
     }
 }
 
+impl From<ImmShift> for ExtraOperand {
+    fn from(shift: ImmShift) -> Self {
+        Self::Shift(shift.into())
+    }
+}
+
 impl From<Shift> for ExtraOperand {
-    fn from(sh: Shift) -> Self {
-        Self::Shift(sh)
+    fn from(shift: Shift) -> Self {
+        Self::Shift(shift)
     }
 }
 
