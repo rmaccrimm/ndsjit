@@ -1,5 +1,8 @@
 use super::TranslationError;
-use crate::disasm::armv4t::{Cond, Instruction, Op, Operand, Register};
+use crate::disasm::armv4t::{
+    Cond, ExtraOperand, ExtraValue, ImmShift, Instruction, Offset, Op, Operand, Register, Shift,
+    ShiftOp,
+};
 use cranelift::prelude::{
     types::{I32, I64},
     InstBuilder, IntCC, Value,
@@ -11,8 +14,10 @@ pub struct TranslationState {
     pub register_vars: Vec<Variable>,
 }
 
-pub fn get_reg_index(reg: Register) -> usize {
-    reg as usize
+impl TranslationState {
+    pub fn get_var(&self, reg: Register) -> Variable {
+        self.register_vars[reg as usize]
+    }
 }
 
 pub fn translate_instruction(
@@ -49,7 +54,7 @@ pub fn translate_cond(
     state: &TranslationState,
     builder: &mut FunctionBuilder,
 ) -> Value {
-    let flags = builder.use_var(state.register_vars[get_reg_index(Register::FLAGS)]);
+    let flags = builder.use_var(state.get_var(Register::FLAGS));
     let v = 28;
     let c = 29;
     let z = 30;
@@ -167,6 +172,7 @@ pub fn translate_op(
     state: &TranslationState,
     builder: &mut FunctionBuilder,
 ) -> Result<(), TranslationError> {
+    let invalid = TranslationError::Invalid(instr.clone());
     match instr.op {
         Op::ADD => {
             let dest = instr.operands[0];
@@ -174,23 +180,65 @@ pub fn translate_op(
             let op2 = instr.operands[2];
             match (dest, op1, op2) {
                 (Operand::Reg(r1), Operand::Reg(r2), Operand::Imm(imm)) => {
-                    let v1 = builder.use_var(state.register_vars[get_reg_index(r1)]);
-                    let v2 = builder.use_var(state.register_vars[get_reg_index(r2)]);
+                    let v1 = builder.use_var(state.get_var(r1));
+                    let v2 = builder.use_var(state.get_var(r2));
                     let const_ = builder.ins().iconst(I32, imm as i64);
                     let res = builder.ins().iadd(v2, const_);
-                    builder.def_var(state.register_vars[get_reg_index(r1)], res);
+                    builder.def_var(state.get_var(r1), res);
                 }
                 (Operand::Reg(r1), _, _) => {
-                    return Err(TranslationError::Unimplemented(instr.clone()));
+                    return Err(invalid);
                 }
                 (_, _, _) => {
-                    return Err(TranslationError::Invalid(instr.clone()));
+                    return Err(invalid);
                 }
-            }
+            };
         }
+        Op::MOV => match (instr.operands[0], instr.operands[1]) {
+            (Operand::Reg(dest), Operand::Reg(src)) => {
+                let base = builder.use_var(state.get_var(src));
+                let result = match instr.extra {
+                    Some(extra) => match extra {
+                        ExtraOperand::Shift(shift) => translate_shift(base, shift, state, builder),
+                        _ => {
+                            return Err(invalid);
+                        }
+                    },
+                    None => base,
+                };
+                builder.def_var(state.get_var(dest), result);
+            }
+            (Operand::Reg(dest), Operand::Imm(imm)) => {
+                let result = builder.ins().iconst(I32, imm as i64);
+                builder.def_var(state.get_var(dest), result);
+            }
+            _ => {
+                return Err(TranslationError::Invalid(instr.clone()));
+            }
+        },
         _ => {
-            return Err(TranslationError::Unimplemented(instr.clone()));
+            todo!();
         }
     }
     Ok(())
+}
+
+/// Applies a shift, returning the new shifted value
+pub fn translate_shift(
+    base: Value,
+    shift: Shift,
+    state: &TranslationState,
+    builder: &mut FunctionBuilder,
+) -> Value {
+    let amt = match shift.value {
+        ExtraValue::Reg(reg) => builder.use_var(state.get_var(reg)),
+        ExtraValue::Imm(imm) => builder.ins().iconst(I32, imm as i64),
+    };
+    match shift.op {
+        ShiftOp::LSL => builder.ins().ishl(base, amt),
+        ShiftOp::LSR => builder.ins().ushr(base, amt),
+        ShiftOp::ASR => builder.ins().sshr(base, amt),
+        ShiftOp::ROR => builder.ins().rotr(base, amt),
+        ShiftOp::RRX => builder.ins().rotr_imm(base, 1),
+    }
 }
