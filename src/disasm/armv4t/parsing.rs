@@ -1,8 +1,8 @@
 use std::str::FromStr;
 
 use super::{
-    AddrMode, Address, Cond, ExtraOperand, ImmOffset, ImmShift, Instruction, Op, Operand,
-    RegOffset, RegShift, Register, ShiftOp,
+    AddrMode, Address, Cond, ExtraOperand, Instruction, Offset, Op, Operand, Register, Shift,
+    ShiftOp,
 };
 use nom::{
     branch::alt,
@@ -50,33 +50,33 @@ fn mnemonic(i: &str) -> ParseResult<(Op, Cond, bool)> {
 /// Parses an immediate shift, starting from the comma following a base register
 /// e.g. [r0, r1, lsl #123]!
 ///             ^--------^ parses this span
-fn imm_shift(i: &str) -> ParseResult<ImmShift> {
+fn imm_shift(i: &str) -> ParseResult<Shift> {
     let (i, _) = match_char(',')(i)?;
     let (i, _) = multispace0(i)?;
     let (i, op) = shift_op(i)?;
     let (i, _) = multispace0(i)?;
     let (i, imm) = imm_val(i)?;
-    Ok((i, ImmShift { op, imm }))
+    Ok((i, Shift::imm(op, imm)))
 }
 
 /// Isn't followed by another operand, unlike other shifts
-fn rrx_shift(i: &str) -> ParseResult<ImmShift> {
+fn rrx_shift(i: &str) -> ParseResult<Shift> {
     let (i, _) = match_char(',')(i)?;
     let (i, _) = multispace0(i)?;
     let (i, op) = tag_no_case("RRX")(i)?;
-    Ok((i, ImmShift { op: op.parse().unwrap(), imm: 1 }))
+    Ok((i, Shift::imm(op.parse().unwrap(), 1)))
 }
 
 /// Parses a register shift, starting from the comma following a base register
 /// e.g. ADR r0, r1, r2, lsl r3
 ///                    ^------^ parses this span
-fn reg_shift(i: &str) -> ParseResult<RegShift> {
+fn reg_shift(i: &str) -> ParseResult<Shift> {
     let (i, _) = match_char(',')(i)?;
     let (i, _) = multispace0(i)?;
     let (i, op) = shift_op(i)?;
     let (i, _) = multispace1(i)?;
     let (i, reg) = register(i)?;
-    Ok((i, RegShift { op, reg }))
+    Ok((i, Shift::reg(op, reg)))
 }
 
 /// Parse an index register offset with optional shift

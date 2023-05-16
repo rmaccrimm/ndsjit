@@ -126,40 +126,26 @@ pub enum ShiftOp {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct ImmShift {
-    pub op: ShiftOp,
-    pub imm: u32,
-}
-
-impl ImmShift {
-    pub fn decode(shift_op: u32, imm5: u32) -> Result<ImmShift, DisasmError> {
-        if shift_op >= 4 {
-            return Err(DisasmError::new("shift op must be a 2-bit value", shift_op));
-        }
-        if imm5 >= 32 {
-            return Err(DisasmError::new("imm shift must be a 5-bit value", imm5));
-        }
-        let (op, imm) = match shift_op {
-            0b00 => (ShiftOp::LSL, imm5),
-            0b01 => (ShiftOp::LSR, if imm5 == 0 { 32 } else { imm5 }),
-            0b10 => (ShiftOp::ASR, if imm5 == 0 { 32 } else { imm5 }),
-            0b11 => {
-                if imm5 == 0 {
-                    (ShiftOp::RRX, 1)
-                } else {
-                    (ShiftOp::ROR, imm5)
-                }
-            }
-            _ => unreachable!(),
-        };
-        Ok(ImmShift { op, imm })
-    }
+/// Base values that can be used as extra operands (offset/shifts) and optionally shifted
+pub enum ExtraValue {
+    Reg(Register),
+    Imm(u32),
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct RegShift {
+pub struct Shift {
     pub op: ShiftOp,
-    pub reg: Register,
+    pub value: ExtraValue,
+}
+
+impl Shift {
+    pub fn reg(op: ShiftOp, reg: Register) -> Self {
+        Self { op, value: ExtraValue::Reg(reg) }
+    }
+
+    pub fn imm(op: ShiftOp, imm: u32) -> Self {
+        Self { op, value: ExtraValue::Imm(imm) }
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -170,49 +156,39 @@ pub enum AddrMode {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct RegOffset {
-    pub reg: Register,
-    pub shift: Option<ImmShift>,
+pub struct Offset {
+    /// Source of the offset
+    pub value: ExtraValue,
+
+    /// Type of shift which can optionally be applied to value
+    pub shift_op: Option<ShiftOp>,
+
+    /// How much to shift by (if shift_op present)
+    pub shift_amt: u32,
+
+    /// Whether the offset is added (true) to base address, or subtracted (false)
     pub add: bool,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct ImmOffset {
-    pub imm: u32,
-    pub add: bool,
-}
+impl Offset {}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 /// Auxillary operands, of which there can be at most 1 per instruction. Used to indicate a shift
 /// applied to a register operand, or an offset applied to an address operand
 pub enum ExtraOperand {
-    RegShift(RegShift),
-    ImmShift(ImmShift),
-    RegOffset(RegOffset),
-    ImmOffset(ImmOffset),
+    Shift(Shift),
+    Offset(Offset),
 }
 
-impl From<RegOffset> for ExtraOperand {
-    fn from(off: RegOffset) -> Self {
-        Self::RegOffset(off)
+impl From<Offset> for ExtraOperand {
+    fn from(off: Offset) -> Self {
+        Self::Offset(off)
     }
 }
 
-impl From<ImmOffset> for ExtraOperand {
-    fn from(off: ImmOffset) -> Self {
-        Self::ImmOffset(off)
-    }
-}
-
-impl From<RegShift> for ExtraOperand {
-    fn from(off: RegShift) -> Self {
-        Self::RegShift(off)
-    }
-}
-
-impl From<ImmShift> for ExtraOperand {
-    fn from(off: ImmShift) -> Self {
-        Self::ImmShift(off)
+impl From<Shift> for ExtraOperand {
+    fn from(sh: Shift) -> Self {
+        Self::Shift(sh)
     }
 }
 
@@ -686,12 +662,14 @@ impl fmt::Display for Instruction {
         }
         if let Some(extra) = self.extra {
             match extra {
-                ExtraOperand::RegShift(r) => {
-                    write!(operand_str, ", {:?} {:?}", r.op, r.reg)?;
-                }
-                ExtraOperand::ImmShift(i) => {
-                    write!(operand_str, ", {:?} {}", i.op, i.imm)?;
-                }
+                ExtraOperand::Shift(shift) => match shift.value {
+                    ExtraValue::Reg(reg) => {
+                        write!(operand_str, ", {:?} {:?}", shift.op, reg)?;
+                    }
+                    ExtraValue::Imm(imm) => {
+                        write!(operand_str, ", {:?} {}", shift.op, imm)?;
+                    }
+                },
                 _ => todo!(),
             }
         }
