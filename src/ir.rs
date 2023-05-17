@@ -1,3 +1,5 @@
+pub mod parsing;
+
 use std::fmt;
 use std::fmt::Write;
 use strum::{Display, EnumIter, EnumString};

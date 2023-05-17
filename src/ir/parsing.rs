@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use crate::ir::{
+use super::{
     AddrMode, Address, Cond, ExtraOperand, ImmShift, Instruction, Offset, Op, Operand, Register,
     Shift, ShiftOp,
 };

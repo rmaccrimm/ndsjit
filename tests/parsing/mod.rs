@@ -1,6 +1,6 @@
-use ndsjit::{
-    ir::{Cond, Instruction, Operand, Shift},
-    reader::parsing::{instruction, ParseResult},
+use ndsjit::ir::{
+    parsing::{instruction, ParseResult},
+    Cond, Instruction, Operand, Shift,
 };
 
 use std::error::Error;

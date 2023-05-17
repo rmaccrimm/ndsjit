@@ -1,5 +1,5 @@
 use ndsjit::{
-    ir::Instruction, reader::parsing::instruction, translate::block_translator::BlockTranslator,
+    ir::parsing::instruction, ir::Instruction, translate::block_translator::BlockTranslator,
 };
 use std::{mem, ptr};
 
