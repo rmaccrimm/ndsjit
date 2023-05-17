@@ -1,6 +1,6 @@
-use ndsjit::disasm::armv4t::{
-    parsing::{instruction, ParseResult},
-    Cond, Instruction, Operand, Shift,
+use ndsjit::{
+    ir::{Cond, Instruction, Operand, Shift},
+    reader::parsing::{instruction, ParseResult},
 };
 
 use std::error::Error;
@@ -92,7 +92,7 @@ impl FromStr for AsmLine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ndsjit::disasm::armv4t::{Op, Register::*, ShiftOp::*};
+    use ndsjit::ir::{Op, Register::*, ShiftOp::*};
 
     #[test]
     fn test_asm_line_from_str() {

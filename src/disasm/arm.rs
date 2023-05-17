@@ -1,12 +1,51 @@
-use super::armv4t::{
+use super::bits::{bit, bit_match, bits, pick_bits};
+use super::{DisasmError, DisasmResult};
+use crate::ir::{
     AddrMode, Address, Cond, ExtraOperand, ExtraValue, ImmShift, Instruction, Offset, Op, Operand,
     Register, Shift, ShiftOp,
 };
-use super::bits::{bit, bit_match, bits, pick_bits};
-use super::{DisasmError, DisasmResult};
 
 /// Number of lookahead bytes in ARM mode
 const PC_LA_ARM: u32 = 8;
+
+/// Used to decode cond from an integer
+const COND_MAP: [Cond; 15] = [
+    Cond::EQ,
+    Cond::NE,
+    Cond::CS,
+    Cond::CC,
+    Cond::MI,
+    Cond::PL,
+    Cond::VS,
+    Cond::VC,
+    Cond::HI,
+    Cond::LS,
+    Cond::GE,
+    Cond::LT,
+    Cond::GT,
+    Cond::LE,
+    Cond::AL,
+];
+
+/// Used to decode register from an integer
+const REG_MAP: [Register; 16] = [
+    Register::R0,
+    Register::R1,
+    Register::R2,
+    Register::R3,
+    Register::R4,
+    Register::R5,
+    Register::R6,
+    Register::R7,
+    Register::R8,
+    Register::R9,
+    Register::R10,
+    Register::R11,
+    Register::R12,
+    Register::SP,
+    Register::LR,
+    Register::PC,
+];
 
 /// Decode instructions described in A5.2 - Data-processing and miscellaneous instructions
 pub fn arm_data_proc_and_misc(instr: u32) -> DisasmResult<Instruction> {
@@ -184,8 +223,8 @@ pub fn arm_unconditional(instr: u32) -> DisasmResult<Instruction> {
 pub fn arm_load_store(instr: u32) -> DisasmResult<Instruction> {
     let op1 = bits(instr, 20..24);
     let op = decode_load_store_op(op1)?;
-    let rn = Register::try_from(bits(instr, 16..19))?;
-    let rt = Register::try_from(bits(instr, 12..15))?;
+    let rn = REG_MAP[bits(instr, 16..19) as usize];
+    let rt = REG_MAP[bits(instr, 12..15) as usize];
 
     // indicates register vs immediate
     let a = bit(instr, 25);
@@ -203,14 +242,14 @@ pub fn arm_load_store(instr: u32) -> DisasmResult<Instruction> {
 
     let mut instruction = Instruction {
         op,
-        cond: Cond::try_from(bits(instr, 28..31))?,
+        cond: COND_MAP[bits(instr, 28..31) as usize],
         operands: vec![Operand::Reg(rt)],
         ..Default::default()
     };
 
     let addr = Address { base: rn, mode };
     let offset = if a == 1 {
-        let rm = Register::try_from(bits(instr, 0..3))?;
+        let rm = REG_MAP[bits(instr, 0..3) as usize];
         let shift = decode_imm_shift(bits(instr, 5..6), bits(instr, 7..11))?;
         let shift = if shift.imm == 0 { None } else { Some(shift) };
         Offset::reg(rm, shift, add)
@@ -235,7 +274,7 @@ pub fn arm_branch(instr: u32) -> DisasmResult<Instruction> {
         }
     };
     Ok(Instruction {
-        cond: Cond::try_from(bits(instr, 28..31))?,
+        cond: COND_MAP[bits(instr, 28..31) as usize],
         op: op,
         operands: vec![Operand::Imm(bits(instr, 0..23))],
         extra: None,
@@ -261,12 +300,12 @@ fn arm_data_proc_reg(instr: u32) -> DisasmResult<Instruction> {
 
     let mut result = Instruction::default();
     result.op = op;
-    result.cond = Cond::try_from(bits(instr, 28..31))?;
+    result.cond = COND_MAP[bits(instr, 28..31) as usize];
     result.set_flags = bit(instr, 20) == 1;
 
-    let rd = Register::try_from(bits(instr, 12..15))?;
-    let rn = Register::try_from(bits(instr, 16..19))?;
-    let rm = Register::try_from(bits(instr, 0..3))?;
+    let rd = REG_MAP[bits(instr, 12..15) as usize];
+    let rn = REG_MAP[bits(instr, 16..19) as usize];
+    let rm = REG_MAP[bits(instr, 0..3) as usize];
     let imm5 = bits(instr, 7..11);
 
     let shift = decode_imm_shift(bits(instr, 5..6), imm5)?;
@@ -318,13 +357,13 @@ fn arm_data_proc_shift_reg(instr: u32) -> DisasmResult<Instruction> {
 
     let mut result = Instruction::default();
     result.op = op;
-    result.cond = Cond::try_from(bits(instr, 28..31))?;
+    result.cond = COND_MAP[bits(instr, 28..31) as usize];
     result.set_flags = bit(instr, 20) == 1;
 
-    let rd = Register::try_from(bits(instr, 12..15))?;
-    let rn = Register::try_from(bits(instr, 16..19))?;
-    let rm = Register::try_from(bits(instr, 0..3))?;
-    let rs = Register::try_from(bits(instr, 8..11))?;
+    let rd = REG_MAP[bits(instr, 12..15) as usize];
+    let rn = REG_MAP[bits(instr, 16..19) as usize];
+    let rm = REG_MAP[bits(instr, 0..3) as usize];
+    let rs = REG_MAP[bits(instr, 8..11) as usize];
     let shift = Some(ExtraOperand::from(Shift {
         op: match bits(instr, 5..6) {
             0b00 => ShiftOp::LSL,
@@ -385,13 +424,13 @@ fn arm_data_proc_imm(instr: u32) -> DisasmResult<Instruction> {
 
     let mut result = Instruction::default();
     result.op = op;
-    result.cond = Cond::try_from(bits(instr, 28..31))?;
+    result.cond = COND_MAP[bits(instr, 28..31) as usize];
     result.set_flags = bit(instr, 20) == 1;
 
-    let rd = Register::try_from(bits(instr, 12..15))?;
-    let rn = Register::try_from(bits(instr, 16..19))?;
-    let rm = Register::try_from(bits(instr, 0..3))?;
-    let rs = Register::try_from(bits(instr, 8..11))?;
+    let rd = REG_MAP[bits(instr, 12..15) as usize];
+    let rn = REG_MAP[bits(instr, 16..19) as usize];
+    let rm = REG_MAP[bits(instr, 0..3) as usize];
+    let rs = REG_MAP[bits(instr, 8..11) as usize];
     let imm = expand_imm(bits(instr, 0..11));
 
     match op {
@@ -437,8 +476,8 @@ fn arm_misc(instr: u32) -> DisasmResult<Instruction> {
         }
     };
 
-    let cond = Cond::try_from(bits(instr, 28..31))?;
-    let rm = Register::try_from(bits(instr, 0..3))?;
+    let cond = COND_MAP[bits(instr, 28..31) as usize];
+    let rm = REG_MAP[bits(instr, 0..3) as usize];
     Ok(Instruction {
         cond,
         op,
@@ -459,10 +498,10 @@ fn arm_mult(instr: u32) -> DisasmResult<Instruction> {
             return Err(DisasmError::undefined(instr));
         }
     };
-    let rd = Register::try_from(bits(instr, 16..19))?;
-    let ra = Register::try_from(bits(instr, 12..15))?;
-    let rm = Register::try_from(bits(instr, 8..11))?;
-    let rn = Register::try_from(bits(instr, 0..3))?;
+    let rd = REG_MAP[bits(instr, 16..19) as usize];
+    let ra = REG_MAP[bits(instr, 12..15) as usize];
+    let rm = REG_MAP[bits(instr, 8..11) as usize];
+    let rn = REG_MAP[bits(instr, 0..3) as usize];
     let s = bit(instr, 20) == 1;
 
     let mut instr = Instruction::default();
@@ -506,9 +545,9 @@ fn arm_extra_load_store_reg(instr: u32) -> DisasmResult<Instruction> {
 
     let op = decode_extra_load_store_op(op1, op2).map_err(|e| e.set_instr(instr))?;
 
-    let rm = Register::try_from(bits(instr, 0..3))?;
-    let rt = Register::try_from(bits(instr, 12..15))?;
-    let rn = Register::try_from(bits(instr, 16..19))?;
+    let rm = REG_MAP[bits(instr, 0..3) as usize];
+    let rt = REG_MAP[bits(instr, 12..15) as usize];
+    let rn = REG_MAP[bits(instr, 16..19) as usize];
     let w = bit(instr, 21);
     let p = bit(instr, 24);
     let add = bit(instr, 23) == 1;
@@ -519,7 +558,7 @@ fn arm_extra_load_store_reg(instr: u32) -> DisasmResult<Instruction> {
 
     Ok(Instruction {
         op,
-        cond: Cond::try_from(bits(instr, 28..31))?,
+        cond: COND_MAP[bits(instr, 28..31) as usize],
         operands: vec![Operand::Reg(rt), Operand::Addr(addr)],
         extra: Some(offset.into()),
         set_flags: false,
@@ -532,8 +571,8 @@ fn arm_extra_load_store_imm(instr: u32) -> DisasmResult<Instruction> {
 
     let op = decode_extra_load_store_op(op1, op2).map_err(|e| e.set_instr(instr))?;
 
-    let rt = Register::try_from(bits(instr, 12..15))?;
-    let rn = Register::try_from(bits(instr, 16..19))?;
+    let rt = REG_MAP[bits(instr, 12..15) as usize];
+    let rn = REG_MAP[bits(instr, 16..19) as usize];
     let imm = (bits(instr, 8..11) << 4) | bits(instr, 0..3);
     let w = bit(instr, 21);
     let p = bit(instr, 24);
@@ -546,7 +585,7 @@ fn arm_extra_load_store_imm(instr: u32) -> DisasmResult<Instruction> {
 
     Ok(Instruction {
         op,
-        cond: Cond::try_from(bits(instr, 28..31))?,
+        cond: COND_MAP[bits(instr, 28..31) as usize],
         operands: vec![Operand::Reg(rt), Operand::Addr(addr)],
         extra: Some(offset.into()),
         set_flags: false,

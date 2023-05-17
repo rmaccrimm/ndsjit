@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use super::{
+use crate::ir::{
     AddrMode, Address, Cond, ExtraOperand, ImmShift, Instruction, Offset, Op, Operand, Register,
     Shift, ShiftOp,
 };
@@ -187,7 +187,7 @@ pub fn instruction(i: &str) -> ParseResult<Instruction> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::disasm::armv4t::{Cond::*, OffsetValue, Op::*, Operand::*, Register::*};
+    use crate::ir::{Cond::*, Op::*, Operand::*, Register::*};
 
     #[test]
     fn test_parse_mnemonic() {

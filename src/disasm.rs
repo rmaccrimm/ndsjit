@@ -1,10 +1,9 @@
 mod arm;
-pub mod armv4t;
 mod bits;
 mod thumb;
 
+use crate::ir::Instruction;
 use arm::*;
-use armv4t::Instruction;
 use bits::{bit, bits};
 use std::error::Error;
 use std::fmt::Display;
@@ -16,18 +15,18 @@ pub struct DisasmError {
 }
 
 impl DisasmError {
-    fn new(description: &str, instr: u32) -> Self {
+    pub fn new(description: &str, instr: u32) -> Self {
         let description = String::from(description);
         Self { description, instr }
     }
 
-    fn undefined(instr: u32) -> Self {
+    pub fn undefined(instr: u32) -> Self {
         Self::new("undefined instruction", instr)
     }
 
     /// Sometimes a function doesn't have access to the whole instruction and it needs to be set
     /// after Error is returned
-    fn set_instr(&self, instr: u32) -> Self {
+    pub fn set_instr(&self, instr: u32) -> Self {
         Self { description: self.description.clone(), instr }
     }
 }
@@ -69,8 +68,8 @@ pub fn disassemble_thumb(addr: u32, instr: u16) -> DisasmResult<Instruction> {
 
 #[cfg(test)]
 mod tests {
-    use super::armv4t::{Cond::*, Instruction, Op::*, Operand, Register::*};
     use super::disassemble_arm;
+    use crate::ir::{Cond::*, Instruction, Op::*, Operand, Register::*};
 
     #[test]
     fn test_disasm_data_proc() {

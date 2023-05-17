@@ -1,5 +1,5 @@
 use super::TranslationError;
-use crate::disasm::armv4t::{
+use crate::ir::{
     Cond, ExtraOperand, ExtraValue, ImmShift, Instruction, Offset, Op, Operand, Register, Shift,
     ShiftOp,
 };
@@ -178,18 +178,30 @@ pub fn translate_op(
             let dest = instr.operands[0];
             let op1 = instr.operands[1];
             let op2 = instr.operands[2];
-            match (dest, op1, op2) {
-                (Operand::Reg(r1), Operand::Reg(r2), Operand::Imm(imm)) => {
-                    let v1 = builder.use_var(state.get_var(r1));
-                    let v2 = builder.use_var(state.get_var(r2));
-                    let const_ = builder.ins().iconst(I32, imm as i64);
-                    let res = builder.ins().iadd(v2, const_);
-                    builder.def_var(state.get_var(r1), res);
+            match (dest, op1) {
+                (Operand::Reg(r1), Operand::Reg(r2)) => {
+                    let base = builder.use_var(state.get_var(r2));
+                    let add = match op2 {
+                        Operand::Reg(reg) => {
+                            let mut arg = builder.use_var(state.get_var(reg));
+                            let shifted = match instr.extra {
+                                None => arg,
+                                Some(ExtraOperand::Shift(shift)) => {
+                                    translate_shift(arg, shift, state, builder)
+                                }
+                                Some(ExtraOperand::Offset(_)) => {
+                                    return Err(invalid);
+                                }
+                            };
+                            shifted
+                        }
+                        Operand::Imm(imm) => builder.ins().iconst(I32, imm as i64),
+                        Operand::Addr(_) => return Err(invalid),
+                    };
+                    let result = builder.ins().iadd(base, add);
+                    builder.def_var(state.get_var(r1), result);
                 }
-                (Operand::Reg(r1), _, _) => {
-                    return Err(invalid);
-                }
-                (_, _, _) => {
+                (_, _) => {
                     return Err(invalid);
                 }
             };

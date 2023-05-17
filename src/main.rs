@@ -1,6 +1,6 @@
 use std::{error::Error, mem, ptr};
 
-use ndsjit::asm::block_translator::BlockTranslator;
+use ndsjit::translate::block_translator::BlockTranslator;
 
 #[repr(C, packed)]
 #[derive(Default, Copy, Clone, Debug)]

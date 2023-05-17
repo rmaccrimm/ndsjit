@@ -14,11 +14,11 @@ use super::TranslationError;
 use std::mem;
 
 use crate::{
-    asm::instruction_translator::translate_instruction,
-    disasm::armv4t::{Instruction, Register},
+    ir::{Instruction, Register},
+    translate::instruction_translator::translate_instruction,
 };
 
-use super::instruction_translator::{get_reg_index, TranslationState};
+use super::instruction_translator::TranslationState;
 
 /// Plan for code "Blocks" - essentially going to be a list of disassembled instructions and maybe
 /// some helper functions for determining things like which registers actually get used
@@ -80,11 +80,6 @@ impl BlockTranslator {
     }
 }
 
-fn get_reg_offset(reg: Register) -> i32 {
-    // TODO -  generic reg size
-    (get_reg_index(reg) * mem::size_of::<u32>()) as i32
-}
-
 fn gen_prologue(vmctx: GlobalValue, state: &mut TranslationState, builder: &mut FunctionBuilder) {
     // TODO some kind of trait that governs access to CPU state
     // Create a re-usable variable for each of the CPU registers
@@ -94,9 +89,12 @@ fn gen_prologue(vmctx: GlobalValue, state: &mut TranslationState, builder: &mut 
         let var = Variable::new(i);
         builder.declare_var(var, I32);
         state.register_vars.push(var);
-        let tmp = builder
-            .ins()
-            .load(I32, MemFlags::new(), base, get_reg_offset(reg));
+        let tmp = builder.ins().load(
+            I32,
+            MemFlags::new(),
+            base,
+            (reg as usize * mem::size_of::<u32>()) as i32,
+        );
         builder.def_var(var, tmp);
     }
 }
@@ -105,12 +103,9 @@ fn gen_epilogue(vmctx: GlobalValue, state: &TranslationState, builder: &mut Func
     let base = builder.ins().global_value(I64, vmctx);
     for (i, &var) in state.register_vars.iter().enumerate() {
         let arg = builder.use_var(var);
-        builder.ins().store(
-            MemFlags::new(),
-            arg,
-            base,
-            get_reg_offset(Register::try_from(i as u32).unwrap()),
-        );
+        builder
+            .ins()
+            .store(MemFlags::new(), arg, base, (i * mem::size_of::<u32>()) as i32);
     }
     let const_ = builder.ins().iconst(I32, 0);
     builder.ins().return_(&[const_]);
@@ -120,7 +115,7 @@ fn gen_epilogue(vmctx: GlobalValue, state: &TranslationState, builder: &mut Func
 #[allow(non_snake_case)]
 mod tests {
     use super::BlockTranslator;
-    use crate::disasm::armv4t::*;
+    use crate::ir::*;
     use std::{mem, ptr};
 
     type Func = unsafe extern "C" fn(*mut [u32; 17]) -> i32;

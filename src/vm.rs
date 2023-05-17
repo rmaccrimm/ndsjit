@@ -1,6 +1,6 @@
 use std::mem::size_of;
 
-use crate::disasm::armv4t::Register;
+use crate::ir::Register;
 
 #[repr(C, packed)]
 pub struct VMState {

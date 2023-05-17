@@ -1,7 +1,3 @@
-pub mod parsing;
-
-use super::DisasmError;
-use std::convert::TryFrom;
 use std::fmt;
 use std::fmt::Write;
 use strum::{Display, EnumIter, EnumString};
@@ -26,32 +22,6 @@ pub enum Cond {
     AL,
 }
 
-impl TryFrom<u32> for Cond {
-    type Error = DisasmError;
-
-    fn try_from(value: u32) -> Result<Self, Self::Error> {
-        let cond = match value {
-            0 => Cond::EQ,
-            1 => Cond::NE,
-            2 => Cond::CS,
-            3 => Cond::CC,
-            4 => Cond::MI,
-            5 => Cond::PL,
-            6 => Cond::VS,
-            7 => Cond::VC,
-            8 => Cond::HI,
-            9 => Cond::LS,
-            10 => Cond::GE,
-            11 => Cond::LT,
-            12 => Cond::GT,
-            13 => Cond::LE,
-            14 => Cond::AL,
-            _ => return Err(DisasmError::new("invalid cond value", value)),
-        };
-        Ok(cond)
-    }
-}
-
 #[derive(Copy, Clone, Debug, PartialEq, Eq, EnumString, EnumIter)]
 #[strum(ascii_case_insensitive)]
 pub enum Register {
@@ -72,34 +42,6 @@ pub enum Register {
     LR = 14,
     PC = 15,
     FLAGS = 16,
-}
-
-impl TryFrom<u32> for Register {
-    type Error = DisasmError;
-
-    fn try_from(value: u32) -> Result<Self, Self::Error> {
-        let reg = match value {
-            0 => Register::R0,
-            1 => Register::R1,
-            2 => Register::R2,
-            3 => Register::R3,
-            4 => Register::R4,
-            5 => Register::R5,
-            6 => Register::R6,
-            7 => Register::R7,
-            8 => Register::R8,
-            9 => Register::R9,
-            10 => Register::R10,
-            11 => Register::R11,
-            12 => Register::R12,
-            13 => Register::SP,
-            14 => Register::LR,
-            15 => Register::PC,
-            16 => Register::FLAGS,
-            _ => return Err(DisasmError::new("invalid register value", value)),
-        };
-        Ok(reg)
-    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]

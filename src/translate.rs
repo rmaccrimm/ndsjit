@@ -6,7 +6,7 @@ pub mod instruction_translator;
 
 use std::{error::Error, fmt::Display};
 
-use crate::disasm::armv4t::Instruction;
+use crate::ir::Instruction;
 
 #[derive(Debug)]
 pub enum TranslationError {
