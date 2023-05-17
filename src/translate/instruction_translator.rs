@@ -1,12 +1,8 @@
 use super::TranslationError;
 use crate::ir::{
-    Cond, ExtraOperand, ExtraValue, ImmShift, Instruction, Offset, Op, Operand, Register, Shift,
-    ShiftOp,
+    Cond, ExtraOperand, ExtraValue, Instruction, Op, Operand, Register, Shift, ShiftOp,
 };
-use cranelift::prelude::{
-    types::{I32, I64},
-    InstBuilder, IntCC, Value,
-};
+use cranelift::prelude::{types::I32, InstBuilder, IntCC, Value};
 use cranelift_frontend::{FunctionBuilder, Variable};
 
 /// Maybe this will persist between block translations and store the output functions?
@@ -183,7 +179,7 @@ pub fn translate_op(
                     let base = builder.use_var(state.get_var(r2));
                     let add = match op2 {
                         Operand::Reg(reg) => {
-                            let mut arg = builder.use_var(state.get_var(reg));
+                            let arg = builder.use_var(state.get_var(reg));
                             let shifted = match instr.extra {
                                 None => arg,
                                 Some(ExtraOperand::Shift(shift)) => {

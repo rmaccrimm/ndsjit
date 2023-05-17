@@ -34,6 +34,9 @@ fn parse_asm_file(filepath: &str) -> Vec<Instruction> {
     let src = std::fs::read_to_string(filepath).unwrap();
     let mut code = vec![];
     for line in src.trim().lines() {
+        if line.starts_with("#") || line.trim().len() == 0 {
+            continue;
+        }
         let (_, instr) = instruction(line).unwrap();
         code.push(instr);
     }
@@ -50,5 +53,5 @@ fn test_data_proc() {
         let func: Func = mem::transmute(func_ptr);
         func(ptr::addr_of_mut!(regs));
     }
-    assert_eq!(regs, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    assert_eq!(regs, [20, 25, 120, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
 }
